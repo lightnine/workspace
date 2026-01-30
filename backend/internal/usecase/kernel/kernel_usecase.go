@@ -376,12 +376,343 @@ import sys
 import json
 import traceback
 import io
+import os
+import subprocess
+import re
+import time
 import contextlib
 from datetime import datetime
 
 # Global namespace for code execution
 _globals = {"__name__": "__main__", "__builtins__": __builtins__}
 _locals = _globals
+
+# Magic command handlers
+def magic_sh(args, msg_id):
+    """Execute shell command: %sh <command> or !<command>"""
+    result = subprocess.run(args, shell=True, capture_output=True, text=True)
+    output = ""
+    if result.stdout:
+        output += result.stdout
+    if result.stderr:
+        output += result.stderr
+    return output, None
+
+def magic_cd(args, msg_id):
+    """Change directory: %cd <path>"""
+    path = args.strip() if args else os.path.expanduser("~")
+    path = os.path.expanduser(path)
+    path = os.path.expandvars(path)
+    try:
+        os.chdir(path)
+        return f"Changed directory to: {os.getcwd()}\n", None
+    except Exception as e:
+        return None, str(e)
+
+def magic_pwd(args, msg_id):
+    """Print working directory: %pwd"""
+    return os.getcwd() + "\n", None
+
+def magic_env(args, msg_id):
+    """Show or set environment variables: %env [VAR=value]"""
+    if not args or not args.strip():
+        # Show all env vars
+        output = "\n".join(f"{k}={v}" for k, v in sorted(os.environ.items()))
+        return output + "\n", None
+    elif "=" in args:
+        # Set env var
+        key, value = args.split("=", 1)
+        os.environ[key.strip()] = value.strip()
+        return f"Set {key.strip()}={value.strip()}\n", None
+    else:
+        # Show specific var
+        key = args.strip()
+        value = os.environ.get(key, "")
+        return f"{key}={value}\n", None
+
+def magic_pip(args, msg_id):
+    """Run pip command: %pip <args>"""
+    cmd = f"{sys.executable} -m pip {args}"
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    output = ""
+    if result.stdout:
+        output += result.stdout
+    if result.stderr:
+        output += result.stderr
+    return output, None
+
+def magic_time(code, msg_id):
+    """Time execution of code: %time <code>"""
+    start = time.time()
+    stdout_capture = io.StringIO()
+    stderr_capture = io.StringIO()
+    
+    with contextlib.redirect_stdout(stdout_capture), contextlib.redirect_stderr(stderr_capture):
+        try:
+            compiled = compile(code, '<cell>', 'eval')
+            result = eval(compiled, _globals, _locals)
+        except SyntaxError:
+            compiled = compile(code, '<cell>', 'exec')
+            result = None
+            exec(compiled, _globals, _locals)
+    
+    elapsed = time.time() - start
+    output = stdout_capture.getvalue()
+    output += f"\nCPU times: {elapsed:.4f}s\nWall time: {elapsed:.4f}s\n"
+    return output, None
+
+def magic_timeit(code, msg_id):
+    """Time execution multiple times: %timeit <code>"""
+    import timeit as _timeit
+    timer = _timeit.Timer(code, globals=_globals)
+    # Determine number of loops
+    for i in range(1, 10):
+        number = 10 ** i
+        time_taken = timer.timeit(number=number)
+        if time_taken >= 0.2:
+            break
+    
+    per_loop = time_taken / number
+    if per_loop < 1e-6:
+        unit = "ns"
+        per_loop *= 1e9
+    elif per_loop < 1e-3:
+        unit = "µs"
+        per_loop *= 1e6
+    elif per_loop < 1:
+        unit = "ms"
+        per_loop *= 1e3
+    else:
+        unit = "s"
+    
+    return f"{number} loops, best of 3: {per_loop:.3g} {unit} per loop\n", None
+
+def magic_who(args, msg_id):
+    """List variables: %who [type]"""
+    filter_type = args.strip() if args else None
+    vars_list = []
+    for name, value in _globals.items():
+        if name.startswith('_'):
+            continue
+        if filter_type:
+            if filter_type == "int" and isinstance(value, int):
+                vars_list.append(name)
+            elif filter_type == "str" and isinstance(value, str):
+                vars_list.append(name)
+            elif filter_type == "list" and isinstance(value, list):
+                vars_list.append(name)
+            elif filter_type == "dict" and isinstance(value, dict):
+                vars_list.append(name)
+            elif filter_type == "function" and callable(value):
+                vars_list.append(name)
+        else:
+            vars_list.append(name)
+    return "  ".join(vars_list) + "\n" if vars_list else "No variables defined.\n", None
+
+def magic_whos(args, msg_id):
+    """List variables with details: %whos"""
+    lines = ["Variable   Type       Data/Info", "-" * 40]
+    for name, value in sorted(_globals.items()):
+        if name.startswith('_'):
+            continue
+        type_name = type(value).__name__
+        if isinstance(value, str):
+            info = repr(value[:50]) + ("..." if len(value) > 50 else "")
+        elif isinstance(value, (list, dict, set)):
+            info = f"n={len(value)}"
+        else:
+            info = repr(value)[:50]
+        lines.append(f"{name:<10} {type_name:<10} {info}")
+    return "\n".join(lines) + "\n", None
+
+def magic_reset(args, msg_id):
+    """Reset namespace: %reset [-f]"""
+    global _globals, _locals
+    if args and "-f" in args:
+        _globals = {"__name__": "__main__", "__builtins__": __builtins__}
+        _locals = _globals
+        return "Namespace reset.\n", None
+    return "Use %reset -f to force reset.\n", None
+
+def magic_run(args, msg_id):
+    """Run a Python file: %run <filename>"""
+    filename = args.strip()
+    if not filename:
+        return None, "Usage: %run <filename>"
+    
+    filename = os.path.expanduser(filename)
+    if not os.path.exists(filename):
+        return None, f"File not found: {filename}"
+    
+    stdout_capture = io.StringIO()
+    stderr_capture = io.StringIO()
+    
+    with contextlib.redirect_stdout(stdout_capture), contextlib.redirect_stderr(stderr_capture):
+        with open(filename, 'r') as f:
+            code = f.read()
+        exec(compile(code, filename, 'exec'), _globals, _locals)
+    
+    return stdout_capture.getvalue(), None
+
+def magic_ls(args, msg_id):
+    """List directory: %ls [path]"""
+    return magic_sh(f"ls -la {args}" if args else "ls -la", msg_id)
+
+def magic_cat(args, msg_id):
+    """Show file contents: %cat <filename>"""
+    return magic_sh(f"cat {args}", msg_id)
+
+def magic_mkdir(args, msg_id):
+    """Create directory: %mkdir <dirname>"""
+    return magic_sh(f"mkdir -p {args}", msg_id)
+
+def magic_rm(args, msg_id):
+    """Remove file: %rm <filename>"""
+    return magic_sh(f"rm {args}", msg_id)
+
+def magic_cp(args, msg_id):
+    """Copy file: %cp <src> <dst>"""
+    return magic_sh(f"cp {args}", msg_id)
+
+def magic_mv(args, msg_id):
+    """Move file: %mv <src> <dst>"""
+    return magic_sh(f"mv {args}", msg_id)
+
+def magic_head(args, msg_id):
+    """Show first lines: %head <filename>"""
+    return magic_sh(f"head {args}", msg_id)
+
+def magic_tail(args, msg_id):
+    """Show last lines: %tail <filename>"""
+    return magic_sh(f"tail {args}", msg_id)
+
+# Cell magic handlers (%%magic)
+def cell_magic_sh(code, msg_id):
+    """Execute entire cell as shell script: %%sh"""
+    result = subprocess.run(code, shell=True, capture_output=True, text=True)
+    output = ""
+    if result.stdout:
+        output += result.stdout
+    if result.stderr:
+        output += result.stderr
+    return output, None
+
+def cell_magic_bash(code, msg_id):
+    """Execute entire cell as bash script: %%bash"""
+    result = subprocess.run(code, shell=True, executable='/bin/bash', capture_output=True, text=True)
+    output = ""
+    if result.stdout:
+        output += result.stdout
+    if result.stderr:
+        output += result.stderr
+    return output, None
+
+def cell_magic_time(code, msg_id):
+    """Time entire cell: %%time"""
+    return magic_time(code, msg_id)
+
+def cell_magic_writefile(code, msg_id, args):
+    """Write cell to file: %%writefile <filename>"""
+    filename = args.strip()
+    if not filename:
+        return None, "Usage: %%writefile <filename>"
+    try:
+        with open(filename, 'w') as f:
+            f.write(code)
+        return f"Writing {filename}\n", None
+    except Exception as e:
+        return None, str(e)
+
+# Magic command registry
+LINE_MAGICS = {
+    'sh': magic_sh,
+    'cd': magic_cd,
+    'pwd': magic_pwd,
+    'env': magic_env,
+    'pip': magic_pip,
+    'time': magic_time,
+    'timeit': magic_timeit,
+    'who': magic_who,
+    'whos': magic_whos,
+    'reset': magic_reset,
+    'run': magic_run,
+    'ls': magic_ls,
+    'cat': magic_cat,
+    'mkdir': magic_mkdir,
+    'rm': magic_rm,
+    'cp': magic_cp,
+    'mv': magic_mv,
+    'head': magic_head,
+    'tail': magic_tail,
+}
+
+CELL_MAGICS = {
+    'sh': cell_magic_sh,
+    'bash': cell_magic_bash,
+    'time': cell_magic_time,
+    'writefile': cell_magic_writefile,
+}
+
+def process_magic(code, msg_id):
+    """Process magic commands in code. Returns (processed_code, output, error)"""
+    lines = code.split('\n')
+    
+    # Check for cell magic (%%magic at the start)
+    if lines and lines[0].strip().startswith('%%'):
+        first_line = lines[0].strip()
+        match = re.match(r'^%%(\w+)\s*(.*)', first_line)
+        if match:
+            magic_name = match.group(1)
+            magic_args = match.group(2)
+            cell_code = '\n'.join(lines[1:])
+            
+            if magic_name in CELL_MAGICS:
+                if magic_name == 'writefile':
+                    return None, *cell_magic_writefile(cell_code, msg_id, magic_args)
+                return None, *CELL_MAGICS[magic_name](cell_code, msg_id)
+            else:
+                return None, None, f"Unknown cell magic: %%{magic_name}"
+    
+    # Process line magics (%magic or !command)
+    processed_lines = []
+    output_parts = []
+    
+    for line in lines:
+        stripped = line.strip()
+        
+        # Handle !command (shell shortcut)
+        if stripped.startswith('!'):
+            cmd = stripped[1:]
+            out, err = magic_sh(cmd, msg_id)
+            if err:
+                return None, None, err
+            if out:
+                output_parts.append(out)
+            continue
+        
+        # Handle %magic
+        match = re.match(r'^%(\w+)\s*(.*)', stripped)
+        if match:
+            magic_name = match.group(1)
+            magic_args = match.group(2)
+            
+            if magic_name in LINE_MAGICS:
+                out, err = LINE_MAGICS[magic_name](magic_args, msg_id)
+                if err:
+                    return None, None, err
+                if out:
+                    output_parts.append(out)
+            else:
+                return None, None, f"Unknown magic: %{magic_name}"
+            continue
+        
+        # Regular code line
+        processed_lines.append(line)
+    
+    remaining_code = '\n'.join(processed_lines).strip()
+    magic_output = ''.join(output_parts) if output_parts else None
+    
+    return remaining_code, magic_output, None
 
 def execute_code(code, msg_id):
     """Execute code and capture outputs."""
@@ -409,57 +740,77 @@ def execute_code(code, msg_id):
     })
     
     try:
-        # Capture stdout/stderr
-        stdout_capture = io.StringIO()
-        stderr_capture = io.StringIO()
+        # Process magic commands first
+        remaining_code, magic_output, magic_error = process_magic(code, msg_id)
         
-        with contextlib.redirect_stdout(stdout_capture), contextlib.redirect_stderr(stderr_capture):
-            # Try to compile as expression first (for display output)
-            try:
-                compiled = compile(code, '<cell>', 'eval')
-                result = eval(compiled, _globals, _locals)
-                if result is not None:
-                    # Send execute_result
-                    send_message({
-                        "msg_id": f"{msg_id}_result",
-                        "msg_type": "execute_result",
-                        "parent_id": msg_id,
-                        "content": {
-                            "data": {"text/plain": repr(result)},
-                            "metadata": {},
-                            "execution_count": execution_count
-                        }
-                    })
-            except SyntaxError:
-                # Not an expression, execute as statement
-                compiled = compile(code, '<cell>', 'exec')
-                exec(compiled, _globals, _locals)
+        if magic_error:
+            raise Exception(magic_error)
         
-        # Send captured stdout
-        stdout_text = stdout_capture.getvalue()
-        if stdout_text:
+        # Send magic output if any
+        if magic_output:
             send_message({
                 "msg_id": f"{msg_id}_stream_stdout",
                 "msg_type": "stream",
                 "parent_id": msg_id,
                 "content": {
                     "name": "stdout",
-                    "text": stdout_text
+                    "text": magic_output
                 }
             })
         
-        # Send captured stderr
-        stderr_text = stderr_capture.getvalue()
-        if stderr_text:
-            send_message({
-                "msg_id": f"{msg_id}_stream_stderr",
-                "msg_type": "stream",
-                "parent_id": msg_id,
-                "content": {
-                    "name": "stderr",
-                    "text": stderr_text
-                }
-            })
+        # Execute remaining Python code if any
+        if remaining_code:
+            # Capture stdout/stderr
+            stdout_capture = io.StringIO()
+            stderr_capture = io.StringIO()
+            
+            with contextlib.redirect_stdout(stdout_capture), contextlib.redirect_stderr(stderr_capture):
+                # Try to compile as expression first (for display output)
+                try:
+                    compiled = compile(remaining_code, '<cell>', 'eval')
+                    result = eval(compiled, _globals, _locals)
+                    if result is not None:
+                        # Send execute_result
+                        send_message({
+                            "msg_id": f"{msg_id}_result",
+                            "msg_type": "execute_result",
+                            "parent_id": msg_id,
+                            "content": {
+                                "data": {"text/plain": repr(result)},
+                                "metadata": {},
+                                "execution_count": execution_count
+                            }
+                        })
+                except SyntaxError:
+                    # Not an expression, execute as statement
+                    compiled = compile(remaining_code, '<cell>', 'exec')
+                    exec(compiled, _globals, _locals)
+            
+            # Send captured stdout
+            stdout_text = stdout_capture.getvalue()
+            if stdout_text:
+                send_message({
+                    "msg_id": f"{msg_id}_stream_stdout",
+                    "msg_type": "stream",
+                    "parent_id": msg_id,
+                    "content": {
+                        "name": "stdout",
+                        "text": stdout_text
+                    }
+                })
+            
+            # Send captured stderr
+            stderr_text = stderr_capture.getvalue()
+            if stderr_text:
+                send_message({
+                    "msg_id": f"{msg_id}_stream_stderr",
+                    "msg_type": "stream",
+                    "parent_id": msg_id,
+                    "content": {
+                        "name": "stderr",
+                        "text": stderr_text
+                    }
+                })
         
         # Send execute_reply success
         send_message({
