@@ -1,10 +1,11 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Editor from '@monaco-editor/react';
 import { Box, useTheme } from '@mui/material';
 import { useEditor } from '../../context/EditorContext';
 import { useApp } from '../../context/AppContext';
 import { NotebookEditor } from './NotebookEditor';
+import { CellOperation } from '../../services/api';
 
 interface MonacoEditorProps {
   height?: string;
@@ -12,11 +13,12 @@ interface MonacoEditorProps {
 
 export const MonacoEditor: React.FC<MonacoEditorProps> = ({ height = '100%' }) => {
   const { t } = useTranslation();
-  const { tabs, activeTabId, updateTabContent, saveFile } = useEditor();
+  const { tabs, activeTabId, updateTabContent, saveFile, patchNotebookFile } = useEditor();
   const { theme: themeMode } = useApp();
   const muiTheme = useTheme();
   const editorRef = useRef<any>(null);
   const monacoRef = useRef<any>(null);
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState(true);
 
   const activeTab = tabs.find(tab => tab.id === activeTabId);
 
@@ -136,6 +138,19 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({ height = '100%' }) =
               updateTabContent(activeTabId, newContent);
             }
           }}
+          onSave={async () => {
+            if (activeTabId) {
+              await saveFile(activeTabId);
+            }
+          }}
+          onPatchSave={async (operations: CellOperation[]) => {
+            if (activeTabId) {
+              await patchNotebookFile(activeTabId, operations);
+            }
+          }}
+          isDirty={activeTab.isDirty}
+          autoSaveEnabled={autoSaveEnabled}
+          onAutoSaveChange={setAutoSaveEnabled}
         />
       ) : (
         <Editor

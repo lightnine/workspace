@@ -5,6 +5,7 @@ import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
 import { AppProvider } from './context/AppContext';
 import { WorkspaceProvider } from './context/WorkspaceContext';
 import { EditorProvider } from './context/EditorContext';
+import { KernelProvider } from './context/KernelContext';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { SearchBar } from './components/SearchBar/SearchBar';
@@ -444,7 +445,9 @@ const App: React.FC = () => {
         <AppProvider>
           <WorkspaceProvider>
             <EditorProvider>
-              <AppContent />
+              <KernelProvider>
+                <AppContent />
+              </KernelProvider>
             </EditorProvider>
           </WorkspaceProvider>
         </AppProvider>

@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Tab, FileItem } from '../types';
-import { getFileContent, saveFileContent, addRecent } from '../services/api';
+import { getFileContent, saveFileContent, patchNotebook, CellOperation, addRecent } from '../services/api';
 
 interface EditorContextType {
   tabs: Tab[];
@@ -12,6 +12,7 @@ interface EditorContextType {
   updateTabContent: (tabId: string, content: string) => void;
   markTabDirty: (tabId: string, isDirty: boolean) => void;
   saveFile: (tabId: string) => Promise<void>;
+  patchNotebookFile: (tabId: string, operations: CellOperation[]) => Promise<void>;
 }
 
 const EditorContext = createContext<EditorContextType | undefined>(undefined);
@@ -109,6 +110,20 @@ export const EditorProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
   };
 
+  // 增量保存 Notebook
+  const patchNotebookFile = async (tabId: string, operations: CellOperation[]) => {
+    const tab = tabs.find(t => t.id === tabId);
+    if (!tab) return;
+
+    try {
+      await patchNotebook(tab.fileId, operations, 'Patch from editor');
+      markTabDirty(tabId, false);
+    } catch (error) {
+      console.error('增量保存 Notebook 失败:', error);
+      throw error;
+    }
+  };
+
   return (
     <EditorContext.Provider
       value={{
@@ -119,7 +134,8 @@ export const EditorProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         closeTab,
         updateTabContent,
         markTabDirty,
-        saveFile
+        saveFile,
+        patchNotebookFile
       }}
     >
       {children}

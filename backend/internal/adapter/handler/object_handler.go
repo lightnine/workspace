@@ -324,6 +324,67 @@ func (h *ObjectHandler) SaveContent(c *gin.Context) {
 	response.Success(c, obj)
 }
 
+// PatchNotebook godoc
+// @Summary Patch notebook content incrementally
+// @Description Incrementally update notebook cells without sending the entire file
+// @Tags objects
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param id path int true "Object ID"
+// @Param request body patchNotebookRequest true "Patch operations"
+// @Success 200 {object} response.Response{data=entity.ObjectResponse}
+// @Failure 400 {object} response.Response
+// @Failure 401 {object} response.Response
+// @Failure 404 {object} response.Response
+// @Router /api/v1/objects/{id}/notebook [patch]
+func (h *ObjectHandler) PatchNotebook(c *gin.Context) {
+	userIDStr := middleware.GetUserID(c)
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		response.Unauthorized(c, "invalid user ID")
+		return
+	}
+
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		response.BadRequest(c, "invalid object ID")
+		return
+	}
+
+	var req patchNotebookRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	// Convert to usecase input
+	ops := make([]object.CellOperation, len(req.Operations))
+	for i, op := range req.Operations {
+		ops[i] = object.CellOperation{
+			Op:       op.Op,
+			CellID:   op.CellID,
+			Index:    op.Index,
+			Cell:     op.Cell,
+			OldIndex: op.OldIndex,
+		}
+	}
+
+	input := &object.PatchNotebookInput{
+		Operations: ops,
+		Message:    req.Message,
+	}
+
+	obj, err := h.objectUseCase.PatchNotebook(c.Request.Context(), id, userID, input)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+
+	response.Success(c, obj)
+}
+
 // Update godoc
 // @Summary Update object metadata
 // @Tags objects
@@ -399,6 +460,13 @@ func (h *ObjectHandler) Delete(c *gin.Context) {
 // @Failure 404 {object} response.Response
 // @Router /api/v1/objects/{id}/move [post]
 func (h *ObjectHandler) Move(c *gin.Context) {
+	userIDStr := middleware.GetUserID(c)
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		response.Unauthorized(c, "invalid user ID")
+		return
+	}
+
 	idStr := c.Param("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
@@ -411,6 +479,9 @@ func (h *ObjectHandler) Move(c *gin.Context) {
 		response.BadRequest(c, err.Error())
 		return
 	}
+
+	// Set user ID from middleware
+	input.UserID = userID
 
 	obj, err := h.objectUseCase.Move(c.Request.Context(), id, &input)
 	if err != nil {
@@ -467,4 +538,18 @@ func (h *ObjectHandler) Copy(c *gin.Context) {
 type saveContentRequest struct {
 	Content string `json:"content" binding:"required"`
 	Message string `json:"message"`
+}
+
+// NotebookCellOperation represents a single cell operation for incremental update
+type NotebookCellOperation struct {
+	Op       string `json:"op" binding:"required,oneof=add update delete move"`       // Operation type: add, update, delete, move
+	CellID   string `json:"cell_id,omitempty"`                                         // Cell ID for update/delete/move
+	Index    *int   `json:"index,omitempty"`                                           // Target index for add/move
+	Cell     any    `json:"cell,omitempty"`                                            // Cell data for add/update
+	OldIndex *int   `json:"old_index,omitempty"`                                       // Original index for move
+}
+
+type patchNotebookRequest struct {
+	Operations []NotebookCellOperation `json:"operations" binding:"required,min=1"`
+	Message    string                  `json:"message"`
 }

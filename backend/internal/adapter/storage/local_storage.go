@@ -123,21 +123,35 @@ func (s *LocalFileStorage) Copy(ctx context.Context, srcPath, dstPath string) er
 	fullSrcPath := s.GetFullPath(srcPath)
 	fullDstPath := s.GetFullPath(dstPath)
 
+	// Check if source is a directory
+	srcInfo, err := os.Stat(fullSrcPath)
+	if err != nil {
+		return err
+	}
+
+	if srcInfo.IsDir() {
+		return s.copyDirectory(fullSrcPath, fullDstPath)
+	}
+
+	return s.copyFile(fullSrcPath, fullDstPath)
+}
+
+func (s *LocalFileStorage) copyFile(srcPath, dstPath string) error {
 	// Ensure destination parent directory exists
-	dstDir := filepath.Dir(fullDstPath)
+	dstDir := filepath.Dir(dstPath)
 	if err := os.MkdirAll(dstDir, 0755); err != nil {
 		return fmt.Errorf("failed to create destination directory: %w", err)
 	}
 
-	log.Debug().Str("src", fullSrcPath).Str("dst", fullDstPath).Msg("Copying file")
+	log.Debug().Str("src", srcPath).Str("dst", dstPath).Msg("Copying file")
 
-	srcFile, err := os.Open(fullSrcPath)
+	srcFile, err := os.Open(srcPath)
 	if err != nil {
 		return err
 	}
 	defer srcFile.Close()
 
-	dstFile, err := os.Create(fullDstPath)
+	dstFile, err := os.Create(dstPath)
 	if err != nil {
 		return err
 	}
@@ -145,6 +159,39 @@ func (s *LocalFileStorage) Copy(ctx context.Context, srcPath, dstPath string) er
 
 	_, err = io.Copy(dstFile, srcFile)
 	return err
+}
+
+func (s *LocalFileStorage) copyDirectory(srcPath, dstPath string) error {
+	log.Debug().Str("src", srcPath).Str("dst", dstPath).Msg("Copying directory")
+
+	// Create destination directory
+	if err := os.MkdirAll(dstPath, 0755); err != nil {
+		return fmt.Errorf("failed to create destination directory: %w", err)
+	}
+
+	// Read source directory contents
+	entries, err := os.ReadDir(srcPath)
+	if err != nil {
+		return fmt.Errorf("failed to read source directory: %w", err)
+	}
+
+	// Copy each entry
+	for _, entry := range entries {
+		srcEntryPath := filepath.Join(srcPath, entry.Name())
+		dstEntryPath := filepath.Join(dstPath, entry.Name())
+
+		if entry.IsDir() {
+			if err := s.copyDirectory(srcEntryPath, dstEntryPath); err != nil {
+				return err
+			}
+		} else {
+			if err := s.copyFile(srcEntryPath, dstEntryPath); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 func (s *LocalFileStorage) Exists(ctx context.Context, path string) (bool, error) {

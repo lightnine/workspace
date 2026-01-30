@@ -205,6 +205,31 @@ export const saveFileContent = async (fileId: number, content: string, message?:
   return response.data.data!;
 };
 
+// Notebook Cell 操作类型
+export interface CellOperation {
+  op: 'add' | 'update' | 'delete' | 'move';
+  cell_id?: string;
+  index?: number;
+  cell?: any;
+  old_index?: number;
+}
+
+// 增量更新 Notebook（只发送变化的 cells）
+export const patchNotebook = async (
+  fileId: number, 
+  operations: CellOperation[], 
+  message?: string
+): Promise<FileItem> => {
+  const response = await apiClient.patch<ApiResponse<FileItem>>(`/api/v1/objects/${fileId}/notebook`, {
+    operations,
+    message
+  });
+  if (response.data.code !== 0) {
+    throw new Error(response.data.message);
+  }
+  return response.data.data!;
+};
+
 // 创建目录
 export const createDirectory = async (name: string, parentId?: number, description?: string): Promise<FileItem> => {
   const response = await apiClient.post<ApiResponse<FileItem>>('/api/v1/objects/directories', {

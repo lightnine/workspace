@@ -17,6 +17,7 @@ import (
 	"github.com/leondli/workspace/internal/infrastructure/logger"
 	"github.com/leondli/workspace/internal/infrastructure/server"
 	"github.com/leondli/workspace/internal/usecase/auth"
+	"github.com/leondli/workspace/internal/usecase/kernel"
 	"github.com/leondli/workspace/internal/usecase/object"
 	"github.com/leondli/workspace/internal/usecase/permission"
 	"github.com/leondli/workspace/internal/usecase/search"
@@ -76,6 +77,7 @@ func main() {
 	versionUseCase := version.NewUseCase(versionRepo, objectRepo, fileStorage)
 	searchUseCase := search.NewUseCase(objectRepo, tagRepo, fileStorage)
 	tagUseCase := tag.NewUseCase(tagRepo, objectRepo)
+	kernelUseCase := kernel.NewUseCase(cfg.Kernel.PythonPath, cfg.Storage.BasePath)
 
 	// Initialize handlers
 	handlers := &handler.Handlers{
@@ -86,6 +88,7 @@ func main() {
 		Version:    handler.NewVersionHandler(versionUseCase),
 		Search:     handler.NewSearchHandler(searchUseCase),
 		Tag:        handler.NewTagHandler(tagUseCase),
+		Kernel:     handler.NewKernelHandler(kernelUseCase),
 	}
 
 	// Initialize HTTP server

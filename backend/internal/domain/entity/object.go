@@ -79,18 +79,19 @@ type ObjectFilter struct {
 
 // ObjectResponse represents the object data returned to client
 type ObjectResponse struct {
-	ID             int64         `json:"id"`
-	Name           string        `json:"name"`
-	Type           ObjectType    `json:"type"`
-	Path           string        `json:"path"`
-	ParentID       *int64        `json:"parent_id,omitempty"`
-	Size           int64         `json:"size"`
-	Description    string        `json:"description,omitempty"`
-	CurrentVersion int           `json:"current_version"`
-	Creator        *UserResponse `json:"creator,omitempty"`
-	Tags           []TagResponse `json:"tags,omitempty"`
-	CreatedAt      time.Time     `json:"created_at"`
-	UpdatedAt      time.Time     `json:"updated_at"`
+	ID             int64             `json:"id"`
+	Name           string            `json:"name"`
+	Type           ObjectType        `json:"type"`
+	Path           string            `json:"path"`
+	ParentID       *int64            `json:"parent_id,omitempty"`
+	Size           int64             `json:"size"`
+	Description    string            `json:"description,omitempty"`
+	CurrentVersion int               `json:"current_version"`
+	Creator        *UserResponse     `json:"creator,omitempty"`
+	Tags           []TagResponse     `json:"tags,omitempty"`
+	Children       []*ObjectResponse `json:"children,omitempty"`
+	CreatedAt      time.Time         `json:"created_at"`
+	UpdatedAt      time.Time         `json:"updated_at"`
 }
 
 // ToResponse converts Object to ObjectResponse

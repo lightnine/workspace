@@ -79,14 +79,6 @@ interface WorkspaceContextType {
 
 const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefined);
 
-// 将后端返回的树形结构转换为前端需要的格式
-const transformTree = (items: FileItem[]): FileItem[] => {
-  return items.map(item => ({
-    ...item,
-    children: item.children ? transformTree(item.children) : undefined
-  }));
-};
-
 export const WorkspaceProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { isAuthenticated } = useApp();
   const [fileTree, setFileTree] = useState<FileItem[]>([]);
@@ -108,8 +100,7 @@ export const WorkspaceProvider: React.FC<{ children: ReactNode }> = ({ children 
     try {
       setLoading(true);
       const tree = await getFileTree();
-      const transformed = transformTree(tree);
-      setFileTree(transformed);
+      setFileTree(tree);
     } catch (error) {
       console.error('加载文件树失败:', error);
       setFileTree([]);

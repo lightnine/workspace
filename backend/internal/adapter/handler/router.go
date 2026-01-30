@@ -16,6 +16,7 @@ type Handlers struct {
 	Version    *VersionHandler
 	Search     *SearchHandler
 	Tag        *TagHandler
+	Kernel     *KernelHandler
 }
 
 // RegisterRoutes registers all API routes
@@ -63,6 +64,7 @@ func RegisterRoutes(router *gin.Engine, handlers *Handlers, jwtManager *jwt.JWTM
 			objects.DELETE("/:id", handlers.Object.Delete)
 			objects.GET("/:id/content", handlers.Object.GetContent)
 			objects.PUT("/:id/content", handlers.Object.SaveContent)
+			objects.PATCH("/:id/notebook", handlers.Object.PatchNotebook)
 			objects.POST("/:id/move", handlers.Object.Move)
 			objects.POST("/:id/copy", handlers.Object.Copy)
 		}
@@ -103,5 +105,22 @@ func RegisterRoutes(router *gin.Engine, handlers *Handlers, jwtManager *jwt.JWTM
 			tags.POST("/objects/:obj_id/:tag_id", handlers.Tag.AddToObject)
 			tags.DELETE("/objects/:obj_id/:tag_id", handlers.Tag.RemoveFromObject)
 		}
+
+		// Kernel routes
+		kernels := protected.Group("/kernels")
+		{
+			kernels.GET("/specs", handlers.Kernel.ListKernelSpecs)
+			kernels.GET("", handlers.Kernel.ListKernels)
+			kernels.POST("", handlers.Kernel.StartKernel)
+			kernels.GET("/:kernel_id", handlers.Kernel.GetKernelStatus)
+			kernels.DELETE("/:kernel_id", handlers.Kernel.StopKernel)
+			kernels.POST("/:kernel_id/restart", handlers.Kernel.RestartKernel)
+			kernels.POST("/:kernel_id/interrupt", handlers.Kernel.InterruptKernel)
+			kernels.POST("/:kernel_id/execute", handlers.Kernel.ExecuteCode)
+		}
 	}
+
+	// WebSocket route for kernel communication (needs special handling)
+	// Note: Authentication is handled within the handler
+	router.GET("/api/v1/kernels/:kernel_id/ws", handlers.Kernel.WebSocketConnect)
 }

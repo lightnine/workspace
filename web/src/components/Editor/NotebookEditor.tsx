@@ -1,7 +1,6 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import {
   Box,
-  Paper,
   Typography,
   IconButton,
   Tooltip,
@@ -11,14 +10,16 @@ import {
   ListItemIcon,
   ListItemText,
   Divider,
-  Select,
-  FormControl,
   Chip,
   CircularProgress,
   Collapse,
   TextField,
   alpha,
-  useTheme
+  useTheme,
+  Fade,
+  ButtonGroup,
+  Select,
+  FormControl
 } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
@@ -28,6 +29,8 @@ import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import DOMPurify from 'dompurify';
 import Editor from '@monaco-editor/react';
 import { useApp } from '../../context/AppContext';
+import { useKernel } from '../../context/KernelContext';
+import type { CellOutput } from '../../services/kernel';
 
 // Icons
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
@@ -38,26 +41,41 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
-import MoreVertIcon from '@mui/icons-material/MoreVert';
+import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import CodeIcon from '@mui/icons-material/Code';
 import TextFieldsIcon from '@mui/icons-material/TextFields';
-import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import ExpandLessIcon from '@mui/icons-material/ExpandLess';
-import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
-import VisibilityIcon from '@mui/icons-material/Visibility';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ClearIcon from '@mui/icons-material/Clear';
 import VerticalAlignTopIcon from '@mui/icons-material/VerticalAlignTop';
 import VerticalAlignBottomIcon from '@mui/icons-material/VerticalAlignBottom';
-import PowerOffIcon from '@mui/icons-material/PowerOff';
-import TerminalIcon from '@mui/icons-material/Terminal';
+import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import UnfoldLessIcon from '@mui/icons-material/UnfoldLess';
+import UnfoldMoreIcon from '@mui/icons-material/UnfoldMore';
+import LinkIcon from '@mui/icons-material/Link';
+import LinkOffIcon from '@mui/icons-material/LinkOff';
+
+import SaveIcon from '@mui/icons-material/Save';
+import AutorenewIcon from '@mui/icons-material/Autorenew';
+import CloudDoneIcon from '@mui/icons-material/CloudDone';
+import { CellOperation } from '../../services/api';
+
+// 导出 CellOperation 类型供其他组件使用
+export type { CellOperation };
 
 interface NotebookEditorProps {
   content?: string;
   height?: string;
   onChange?: (content: string) => void;
+  onSave?: () => Promise<void>;
+  onPatchSave?: (operations: CellOperation[]) => Promise<void>;
   readOnly?: boolean;
+  isDirty?: boolean;
+  autoSaveEnabled?: boolean;
+  onAutoSaveChange?: (enabled: boolean) => void;
 }
 
 interface NotebookData {
@@ -98,6 +116,7 @@ interface NotebookOutput {
   evalue?: string;
   name?: string;
   execution_count?: number;
+  metadata?: Record<string, unknown>;
 }
 
 // 工具函数
@@ -126,33 +145,33 @@ const createEmptyCell = (type: 'code' | 'markdown' = 'code'): NotebookCell => ({
   id: generateCellId()
 });
 
-// 渲染输出
+// 渲染输出组件
 const CellOutput: React.FC<{ outputs: NotebookOutput[]; isDarkMode: boolean }> = ({ outputs, isDarkMode }) => {
   if (!outputs || outputs.length === 0) return null;
 
   return (
-    <Box sx={{ mt: 0 }}>
+    <Box sx={{ 
+      fontFamily: '"JetBrains Mono", "Fira Code", "Consolas", monospace',
+      fontSize: '13px',
+      lineHeight: 1.5
+    }}>
       {outputs.map((output, index) => {
         const outputType = output.output_type;
         
         if (outputType === 'stream') {
           const text = normalizeText(output.text);
+          const isStderr = output.name === 'stderr';
           return (
             <Box
               key={index}
               component="pre"
               sx={{
                 m: 0,
-                p: 2,
-                bgcolor: isDarkMode ? alpha('#000', 0.2) : alpha('#000', 0.02),
-                fontSize: '13px',
-                fontFamily: '"JetBrains Mono", "Fira Code", "Consolas", monospace',
+                p: 1.5,
+                bgcolor: 'transparent',
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-word',
-                lineHeight: 1.6,
-                color: output.name === 'stderr' ? 'error.main' : 'text.primary',
-                borderLeft: '3px solid',
-                borderLeftColor: output.name === 'stderr' ? 'error.main' : 'success.main'
+                color: isStderr ? 'error.main' : (isDarkMode ? '#D4D4D4' : '#1e1e1e'),
               }}
             >
               {text}
@@ -169,15 +188,12 @@ const CellOutput: React.FC<{ outputs: NotebookOutput[]; isDarkMode: boolean }> =
               component="pre"
               sx={{
                 m: 0,
-                p: 2,
-                bgcolor: isDarkMode ? alpha('#ff1744', 0.1) : alpha('#ff1744', 0.05),
-                fontSize: '13px',
-                fontFamily: '"JetBrains Mono", "Fira Code", "Consolas", monospace',
+                p: 1.5,
+                bgcolor: isDarkMode ? alpha('#ff1744', 0.08) : alpha('#ff1744', 0.05),
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-word',
                 color: 'error.main',
-                borderLeft: '3px solid',
-                borderLeftColor: 'error.main'
+                borderRadius: 1
               }}
             >
               {errorMsg}
@@ -198,24 +214,23 @@ const CellOutput: React.FC<{ outputs: NotebookOutput[]; isDarkMode: boolean }> =
               {html && (
                 <Box
                   sx={{
-                    p: 2,
-                    bgcolor: isDarkMode ? alpha('#000', 0.2) : 'transparent',
+                    p: 1.5,
                     overflowX: 'auto',
                     '& table': {
                       borderCollapse: 'collapse',
-                      width: '100%',
-                      fontSize: '13px',
+                      width: 'auto',
+                      fontSize: '12px',
                       '& th, & td': {
                         border: '1px solid',
-                        borderColor: 'divider',
-                        p: 1,
+                        borderColor: isDarkMode ? alpha('#fff', 0.15) : alpha('#000', 0.12),
+                        p: '6px 12px',
                         textAlign: 'left'
                       },
                       '& th': {
                         bgcolor: isDarkMode ? alpha('#fff', 0.05) : alpha('#000', 0.03),
                         fontWeight: 600
                       },
-                      '& tr:hover': {
+                      '& tr:hover td': {
                         bgcolor: isDarkMode ? alpha('#fff', 0.02) : alpha('#000', 0.02)
                       }
                     }
@@ -228,34 +243,24 @@ const CellOutput: React.FC<{ outputs: NotebookOutput[]; isDarkMode: boolean }> =
                   component="pre"
                   sx={{
                     m: 0,
-                    p: 2,
-                    bgcolor: isDarkMode ? alpha('#000', 0.2) : alpha('#000', 0.02),
-                    fontSize: '13px',
-                    fontFamily: '"JetBrains Mono", "Fira Code", "Consolas", monospace',
+                    p: 1.5,
                     whiteSpace: 'pre-wrap',
-                    borderLeft: '3px solid',
-                    borderLeftColor: 'info.main'
+                    color: isDarkMode ? '#D4D4D4' : '#1e1e1e'
                   }}
                 >
                   {text}
                 </Box>
               )}
               {imageData && (
-                <Box
-                  sx={{
-                    p: 2,
-                    display: 'flex',
-                    justifyContent: 'center'
-                  }}
-                >
+                <Box sx={{ p: 1.5 }}>
                   <Box
                     component="img"
                     src={`data:${imageMime};base64,${imageData}`}
                     alt="output"
                     sx={{ 
-                      maxWidth: '100%', 
+                      maxWidth: '100%',
                       borderRadius: 1,
-                      boxShadow: 1
+                      boxShadow: isDarkMode ? '0 2px 8px rgba(0,0,0,0.4)' : '0 2px 8px rgba(0,0,0,0.1)'
                     }}
                   />
                 </Box>
@@ -270,7 +275,7 @@ const CellOutput: React.FC<{ outputs: NotebookOutput[]; isDarkMode: boolean }> =
   );
 };
 
-// 单元格组件
+// VS Code 风格的单元格组件
 interface CellProps {
   cell: NotebookCell;
   index: number;
@@ -321,9 +326,9 @@ const NotebookCell: React.FC<CellProps> = ({
   const { t } = useTranslation();
   const theme = useTheme();
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
-  const [isEditing, setIsEditing] = useState(false);
+  const [isMarkdownEditing, setIsMarkdownEditing] = useState(false);
   const [outputCollapsed, setOutputCollapsed] = useState(false);
-  const [codeHidden, setCodeHidden] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
   const editorRef = useRef<any>(null);
 
   const source = normalizeText(cell.source);
@@ -331,6 +336,7 @@ const NotebookCell: React.FC<CellProps> = ({
   const isCodeCell = cell.cell_type === 'code';
   const isMarkdownCell = cell.cell_type === 'markdown';
   const hasError = hasErrorOutput(outputs);
+  const hasOutput = outputs.length > 0;
   const executionCount = cell.execution_count;
 
   const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
@@ -352,471 +358,535 @@ const NotebookCell: React.FC<CellProps> = ({
     }
   };
 
-  // 计算编辑器高度
+  // 计算编辑器高度 - 更紧凑
   const editorHeight = useMemo(() => {
     const lines = source.split('\n').length;
-    return Math.max(56, Math.min(lines * 20 + 16, 500));
+    return Math.max(38, Math.min(lines * 19 + 10, 400));
   }, [source]);
 
-  // 获取执行状态颜色
-  const getStatusColor = () => {
-    if (isRunning) return theme.palette.warning.main;
-    if (hasError) return theme.palette.error.main;
-    if (executionCount !== null && executionCount !== undefined) return theme.palette.success.main;
-    return isDarkMode ? alpha('#fff', 0.2) : alpha('#000', 0.15);
+  // 执行状态图标
+  const StatusIcon = () => {
+    if (isRunning) {
+      return <CircularProgress size={14} thickness={5} sx={{ color: 'primary.main' }} />;
+    }
+    if (hasError) {
+      return <ErrorOutlineIcon sx={{ fontSize: 16, color: 'error.main' }} />;
+    }
+    if (executionCount !== null && executionCount !== undefined) {
+      return <CheckCircleOutlineIcon sx={{ fontSize: 16, color: 'success.main' }} />;
+    }
+    return null;
   };
 
   return (
     <Box
       onClick={onActivate}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       sx={{
         position: 'relative',
-        mb: 0.5,
-        transition: 'all 0.15s ease',
-        '&:hover .cell-actions': {
+        mb: 0,
+        '&:hover .cell-toolbar': {
           opacity: 1
         }
       }}
     >
-      {/* 单元格主体 */}
+      {/* 单元格主容器 */}
       <Box
         sx={{
           display: 'flex',
-          borderRadius: '8px',
-          overflow: 'hidden',
-          border: '1px solid',
-          borderColor: isActive 
-            ? 'primary.main' 
-            : isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.08),
-          bgcolor: isDarkMode ? alpha('#fff', 0.02) : 'background.paper',
-          boxShadow: isActive 
-            ? `0 0 0 1px ${alpha(theme.palette.primary.main, 0.3)}` 
-            : 'none',
-          transition: 'all 0.15s ease'
+          borderLeft: '2px solid',
+          borderColor: isActive ? 'primary.main' : 'transparent',
+          transition: 'border-color 0.1s ease',
+          bgcolor: isActive 
+            ? (isDarkMode ? alpha('#2563EB', 0.05) : alpha('#2563EB', 0.03))
+            : 'transparent',
         }}
       >
-        {/* 左侧状态栏 */}
+        {/* 左侧执行区域 - VS Code 风格 */}
         <Box
           sx={{
-            width: 4,
-            bgcolor: getStatusColor(),
+            width: 48,
             flexShrink: 0,
-            transition: 'background-color 0.2s'
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            pt: 0.5,
+            gap: 0.5
           }}
-        />
+        >
+          {/* 运行按钮 */}
+          {isCodeCell && (
+            <Tooltip title={t('notebook.runCell')} placement="left" arrow>
+              <IconButton
+                size="small"
+                onClick={(e) => { e.stopPropagation(); onRun(); }}
+                disabled={readOnly || isRunning}
+                sx={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: '6px',
+                  bgcolor: isHovered || isActive 
+                    ? (isDarkMode ? alpha('#fff', 0.08) : alpha('#000', 0.05))
+                    : 'transparent',
+                  color: isRunning ? 'primary.main' : 'text.secondary',
+                  '&:hover': { 
+                    bgcolor: isDarkMode ? alpha('#fff', 0.12) : alpha('#000', 0.08),
+                    color: 'primary.main'
+                  }
+                }}
+              >
+                {isRunning ? (
+                  <CircularProgress size={14} thickness={5} sx={{ color: 'primary.main' }} />
+                ) : (
+                  <PlayArrowIcon sx={{ fontSize: 18 }} />
+                )}
+              </IconButton>
+            </Tooltip>
+          )}
 
-        {/* 单元格内容区 */}
-        <Box sx={{ flex: 1, minWidth: 0 }}>
-          {/* Cell Header */}
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              px: 1.5,
-              py: 0.75,
-              borderBottom: isActive ? '1px solid' : 'none',
-              borderColor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.06),
-              bgcolor: isActive 
-                ? (isDarkMode ? alpha('#fff', 0.03) : alpha('#000', 0.02))
-                : 'transparent',
-              minHeight: 40,
-              gap: 0.5
-            }}
-          >
-            {/* 拖拽手柄 */}
-            <Box 
-              sx={{ 
-                cursor: 'grab', 
-                color: isDarkMode ? alpha('#fff', 0.3) : alpha('#000', 0.25), 
+          {/* 执行计数 */}
+          {isCodeCell && (
+            <Typography
+              sx={{
+                fontFamily: '"JetBrains Mono", monospace',
+                fontSize: '11px',
+                color: hasError ? 'error.main' : 'text.disabled',
+                fontWeight: 500,
+                minHeight: 16,
                 display: 'flex',
-                '&:hover': {
-                  color: 'text.secondary'
-                }
+                alignItems: 'center',
+                justifyContent: 'center'
               }}
             >
-              <DragIndicatorIcon sx={{ fontSize: 18 }} />
+              [{executionCount ?? ' '}]
+            </Typography>
+          )}
+
+          {/* Markdown 标识 */}
+          {isMarkdownCell && (
+            <Box
+              sx={{
+                width: 28,
+                height: 28,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <TextFieldsIcon sx={{ fontSize: 16, color: 'text.disabled' }} />
             </Box>
+          )}
+        </Box>
 
-            {/* 运行按钮 */}
-            <Tooltip title={isCodeCell ? t('notebook.runCell') : ''} arrow placement="top">
-              <span>
-                <IconButton
-                  size="small"
-                  onClick={(e) => { e.stopPropagation(); onRun(); }}
-                  disabled={!isCodeCell || readOnly || isRunning}
-                  sx={{
-                    width: 28,
-                    height: 28,
-                    bgcolor: isCodeCell 
-                      ? (isRunning ? 'warning.main' : 'primary.main')
-                      : (isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.06)),
-                    color: isCodeCell ? 'white' : 'text.disabled',
-                    borderRadius: '6px',
-                    '&:hover': { 
-                      bgcolor: isCodeCell 
-                        ? (isRunning ? 'warning.dark' : 'primary.dark')
-                        : (isDarkMode ? alpha('#fff', 0.15) : alpha('#000', 0.1))
-                    },
-                    '&:disabled': { 
-                      bgcolor: isDarkMode ? alpha('#fff', 0.05) : alpha('#000', 0.04), 
-                      color: isDarkMode ? alpha('#fff', 0.2) : alpha('#000', 0.2)
-                    }
-                  }}
-                >
-                  {isRunning ? (
-                    <CircularProgress size={14} sx={{ color: 'white' }} />
-                  ) : (
-                    <PlayArrowIcon sx={{ fontSize: 16 }} />
-                  )}
-                </IconButton>
-              </span>
-            </Tooltip>
-
-            {/* 执行计数 / 状态 */}
-            <Box sx={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              minWidth: 60,
-              ml: 0.5
-            }}>
-              {isCodeCell && (
-                <Typography 
-                  variant="caption" 
-                  sx={{ 
-                    fontFamily: '"JetBrains Mono", monospace',
-                    fontSize: '11px',
-                    color: hasError ? 'error.main' : 'text.secondary',
-                    fontWeight: 500
-                  }}
-                >
-                  [{executionCount ?? ' '}]
-                </Typography>
-              )}
-              {!isCodeCell && (
-                <Chip
-                  size="small"
-                  label="MD"
-                  sx={{
-                    height: 20,
-                    fontSize: '10px',
-                    fontWeight: 600,
-                    bgcolor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.06),
-                    color: 'text.secondary'
-                  }}
-                />
-              )}
-            </Box>
-
-            <Box sx={{ flex: 1 }} />
-
-            {/* 单元格操作按钮组 */}
-            <Box 
-              className="cell-actions"
-              sx={{ 
-                display: 'flex', 
-                alignItems: 'center', 
+        {/* 右侧内容区 */}
+        <Box sx={{ flex: 1, minWidth: 0, py: 0.5, pr: 1 }}>
+          {/* Cell 工具栏 - 悬停显示 */}
+          <Fade in={isHovered || isActive}>
+            <Box
+              className="cell-toolbar"
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
                 gap: 0.25,
-                opacity: isActive ? 1 : 0,
+                mb: 0.5,
+                height: 24,
+                opacity: 0,
                 transition: 'opacity 0.15s'
               }}
             >
-              {/* 单元类型选择 */}
-              <FormControl size="small">
-                <Select
-                  value={cell.cell_type}
-                  onChange={(e) => onChangeType(e.target.value as 'code' | 'markdown')}
-                  disabled={readOnly}
-                  sx={{
-                    height: 26,
-                    fontSize: '12px',
-                    bgcolor: isDarkMode ? alpha('#fff', 0.05) : alpha('#000', 0.04),
-                    borderRadius: '6px',
-                    '& .MuiOutlinedInput-notchedOutline': {
-                      border: 'none'
-                    },
-                    '& .MuiSelect-select': { 
-                      py: 0.5, 
-                      px: 1,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 0.5
-                    }
-                  }}
-                >
-                  <MenuItem value="code">
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                      <CodeIcon sx={{ fontSize: 14 }} />
-                      Code
-                    </Box>
-                  </MenuItem>
-                  <MenuItem value="markdown">
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                      <TextFieldsIcon sx={{ fontSize: 14 }} />
-                      Markdown
-                    </Box>
-                  </MenuItem>
-                </Select>
-              </FormControl>
-
-              <Divider orientation="vertical" flexItem sx={{ mx: 0.5, height: 20, alignSelf: 'center' }} />
-
-              <Tooltip title={t('notebook.moveUp')} arrow>
-                <span>
-                  <IconButton 
-                    size="small" 
-                    onClick={(e) => { e.stopPropagation(); onMoveUp(); }} 
-                    disabled={!canMoveUp || readOnly}
-                    sx={{ 
-                      width: 26, 
-                      height: 26,
-                      borderRadius: '6px',
-                      '&:hover': { bgcolor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.06) }
+              {/* 类型切换 */}
+              <ButtonGroup size="small" sx={{ mr: 0.5 }}>
+                <Tooltip title="Code" arrow>
+                  <Button
+                    onClick={(e) => { e.stopPropagation(); onChangeType('code'); }}
+                    disabled={readOnly}
+                    sx={{
+                      minWidth: 28,
+                      height: 22,
+                      p: 0,
+                      bgcolor: isCodeCell 
+                        ? (isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.08))
+                        : 'transparent',
+                      color: isCodeCell ? 'text.primary' : 'text.secondary',
+                      border: 'none',
+                      '&:hover': { 
+                        bgcolor: isDarkMode ? alpha('#fff', 0.12) : alpha('#000', 0.1),
+                        border: 'none'
+                      }
                     }}
                   >
-                    <KeyboardArrowUpIcon sx={{ fontSize: 18 }} />
+                    <CodeIcon sx={{ fontSize: 14 }} />
+                  </Button>
+                </Tooltip>
+                <Tooltip title="Markdown" arrow>
+                  <Button
+                    onClick={(e) => { e.stopPropagation(); onChangeType('markdown'); }}
+                    disabled={readOnly}
+                    sx={{
+                      minWidth: 28,
+                      height: 22,
+                      p: 0,
+                      bgcolor: isMarkdownCell 
+                        ? (isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.08))
+                        : 'transparent',
+                      color: isMarkdownCell ? 'text.primary' : 'text.secondary',
+                      border: 'none',
+                      '&:hover': { 
+                        bgcolor: isDarkMode ? alpha('#fff', 0.12) : alpha('#000', 0.1),
+                        border: 'none'
+                      }
+                    }}
+                  >
+                    <TextFieldsIcon sx={{ fontSize: 14 }} />
+                  </Button>
+                </Tooltip>
+              </ButtonGroup>
+
+              <Divider orientation="vertical" flexItem sx={{ mx: 0.5, height: 16, alignSelf: 'center' }} />
+
+              {/* 移动按钮 */}
+              <Tooltip title={t('notebook.moveUp')} arrow>
+                <span>
+                  <IconButton
+                    size="small"
+                    onClick={(e) => { e.stopPropagation(); onMoveUp(); }}
+                    disabled={!canMoveUp || readOnly}
+                    sx={{ 
+                      width: 22, 
+                      height: 22,
+                      color: 'text.secondary',
+                      '&:hover': { bgcolor: isDarkMode ? alpha('#fff', 0.08) : alpha('#000', 0.06) }
+                    }}
+                  >
+                    <KeyboardArrowUpIcon sx={{ fontSize: 16 }} />
                   </IconButton>
                 </span>
               </Tooltip>
               <Tooltip title={t('notebook.moveDown')} arrow>
                 <span>
-                  <IconButton 
-                    size="small" 
-                    onClick={(e) => { e.stopPropagation(); onMoveDown(); }} 
+                  <IconButton
+                    size="small"
+                    onClick={(e) => { e.stopPropagation(); onMoveDown(); }}
                     disabled={!canMoveDown || readOnly}
                     sx={{ 
-                      width: 26, 
-                      height: 26,
-                      borderRadius: '6px',
-                      '&:hover': { bgcolor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.06) }
+                      width: 22, 
+                      height: 22,
+                      color: 'text.secondary',
+                      '&:hover': { bgcolor: isDarkMode ? alpha('#fff', 0.08) : alpha('#000', 0.06) }
                     }}
                   >
-                    <KeyboardArrowDownIcon sx={{ fontSize: 18 }} />
+                    <KeyboardArrowDownIcon sx={{ fontSize: 16 }} />
                   </IconButton>
                 </span>
               </Tooltip>
 
-              <Divider orientation="vertical" flexItem sx={{ mx: 0.5, height: 20, alignSelf: 'center' }} />
+              <Divider orientation="vertical" flexItem sx={{ mx: 0.5, height: 16, alignSelf: 'center' }} />
 
+              {/* 复制和删除 */}
               <Tooltip title={t('notebook.duplicate')} arrow>
                 <span>
-                  <IconButton 
-                    size="small" 
-                    onClick={(e) => { e.stopPropagation(); onDuplicate(); }} 
+                  <IconButton
+                    size="small"
+                    onClick={(e) => { e.stopPropagation(); onDuplicate(); }}
                     disabled={readOnly}
                     sx={{ 
-                      width: 26, 
-                      height: 26,
-                      borderRadius: '6px',
-                      '&:hover': { bgcolor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.06) }
+                      width: 22, 
+                      height: 22,
+                      color: 'text.secondary',
+                      '&:hover': { bgcolor: isDarkMode ? alpha('#fff', 0.08) : alpha('#000', 0.06) }
                     }}
                   >
-                    <ContentCopyIcon sx={{ fontSize: 16 }} />
+                    <ContentCopyIcon sx={{ fontSize: 14 }} />
                   </IconButton>
                 </span>
               </Tooltip>
               <Tooltip title={t('notebook.deleteCell')} arrow>
                 <span>
-                  <IconButton 
-                    size="small" 
-                    onClick={(e) => { e.stopPropagation(); onDelete(); }} 
+                  <IconButton
+                    size="small"
+                    onClick={(e) => { e.stopPropagation(); onDelete(); }}
                     disabled={readOnly || totalCells <= 1}
                     sx={{ 
-                      width: 26, 
-                      height: 26,
-                      borderRadius: '6px',
-                      color: 'error.main',
+                      width: 22, 
+                      height: 22,
+                      color: 'text.secondary',
                       '&:hover': { 
-                        bgcolor: alpha(theme.palette.error.main, 0.1)
+                        bgcolor: alpha(theme.palette.error.main, 0.1),
+                        color: 'error.main'
                       }
                     }}
                   >
-                    <DeleteOutlineIcon sx={{ fontSize: 16 }} />
+                    <DeleteOutlineIcon sx={{ fontSize: 14 }} />
                   </IconButton>
                 </span>
               </Tooltip>
 
               {/* 更多菜单 */}
-              <IconButton 
-                size="small" 
+              <IconButton
+                size="small"
                 onClick={handleMenuOpen}
                 sx={{ 
-                  width: 26, 
-                  height: 26,
-                  borderRadius: '6px',
-                  '&:hover': { bgcolor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.06) }
+                  width: 22, 
+                  height: 22,
+                  color: 'text.secondary',
+                  '&:hover': { bgcolor: isDarkMode ? alpha('#fff', 0.08) : alpha('#000', 0.06) }
                 }}
               >
-                <MoreVertIcon sx={{ fontSize: 16 }} />
+                <MoreHorizIcon sx={{ fontSize: 16 }} />
               </IconButton>
             </Box>
-          </Box>
+          </Fade>
 
           {/* Cell Content */}
-          <Collapse in={!codeHidden}>
-            <Box sx={{ position: 'relative' }}>
-              {isCodeCell ? (
-                // 代码编辑器
-                <Box
-                  sx={{
-                    '& .monaco-editor': {
-                      paddingTop: '4px !important'
+          <Box
+            sx={{
+              borderRadius: '4px',
+              overflow: 'hidden',
+              border: '1px solid',
+              borderColor: isActive 
+                ? (isDarkMode ? alpha('#fff', 0.15) : alpha('#000', 0.12))
+                : (isDarkMode ? alpha('#fff', 0.08) : alpha('#000', 0.06)),
+              bgcolor: isDarkMode ? '#1e1e1e' : '#ffffff',
+              transition: 'border-color 0.1s ease'
+            }}
+          >
+            {isCodeCell ? (
+              // 代码编辑器
+              <Box
+                sx={{
+                  '& .monaco-editor': {
+                    paddingTop: '2px !important'
+                  },
+                  '& .monaco-editor .margin': {
+                    bgcolor: 'transparent !important'
+                  }
+                }}
+              >
+                <Editor
+                  height={editorHeight}
+                  language={language}
+                  value={source}
+                  onChange={handleEditorChange}
+                  onMount={handleEditorDidMount}
+                  options={{
+                    minimap: { enabled: false },
+                    lineNumbers: 'on',
+                    lineNumbersMinChars: 3,
+                    folding: true,
+                    wordWrap: 'on',
+                    scrollBeyondLastLine: false,
+                    automaticLayout: true,
+                    fontSize: 13,
+                    fontFamily: '"JetBrains Mono", "Fira Code", "Consolas", monospace',
+                    readOnly: readOnly,
+                    renderLineHighlight: isActive ? 'line' : 'none',
+                    scrollbar: {
+                      vertical: 'hidden',
+                      horizontal: 'auto',
+                      verticalScrollbarSize: 0,
+                      horizontalScrollbarSize: 6
                     },
-                    '& .monaco-editor .margin': {
-                      bgcolor: 'transparent !important'
+                    padding: { top: 4, bottom: 4 },
+                    overviewRulerLanes: 0,
+                    hideCursorInOverviewRuler: true,
+                    overviewRulerBorder: false,
+                    contextmenu: true,
+                    glyphMargin: false,
+                    lineDecorationsWidth: 4,
+                    renderWhitespace: 'selection'
+                  }}
+                  theme={isDarkMode ? 'vs-dark' : 'light'}
+                />
+              </Box>
+            ) : isMarkdownCell ? (
+              // Markdown 编辑/预览
+              isMarkdownEditing || (isActive && !source) ? (
+                <Box sx={{ p: 1 }}>
+                  <TextField
+                    fullWidth
+                    multiline
+                    minRows={2}
+                    value={source}
+                    onChange={(e) => onUpdate(e.target.value)}
+                    onBlur={() => source && setIsMarkdownEditing(false)}
+                    autoFocus={isMarkdownEditing}
+                    disabled={readOnly}
+                    placeholder={t('notebook.markdownPlaceholder')}
+                    sx={{
+                      '& .MuiInputBase-root': {
+                        fontFamily: '"JetBrains Mono", monospace',
+                        fontSize: '13px',
+                        p: 1,
+                        bgcolor: 'transparent'
+                      },
+                      '& .MuiOutlinedInput-notchedOutline': {
+                        border: 'none'
+                      }
+                    }}
+                  />
+                </Box>
+              ) : (
+                <Box
+                  onClick={(e) => { e.stopPropagation(); setIsMarkdownEditing(true); }}
+                  sx={{
+                    p: 1.5,
+                    cursor: 'text',
+                    minHeight: 40,
+                    '& > *:first-of-type': { mt: 0 },
+                    '& > *:last-child': { mb: 0 },
+                    '& h1': { fontSize: '1.5em', fontWeight: 600, mt: 1.5, mb: 0.75, borderBottom: '1px solid', borderColor: 'divider', pb: 0.5 },
+                    '& h2': { fontSize: '1.3em', fontWeight: 600, mt: 1.5, mb: 0.75, borderBottom: '1px solid', borderColor: 'divider', pb: 0.5 },
+                    '& h3': { fontSize: '1.15em', fontWeight: 600, mt: 1, mb: 0.5 },
+                    '& h4, & h5, & h6': { fontWeight: 600, mt: 1, mb: 0.5 },
+                    '& p': { my: 0.75, lineHeight: 1.6 },
+                    '& pre': {
+                      p: 1.5,
+                      borderRadius: '4px',
+                      bgcolor: isDarkMode ? alpha('#000', 0.3) : alpha('#000', 0.04),
+                      overflowX: 'auto',
+                      my: 1
+                    },
+                    '& code': {
+                      fontFamily: '"JetBrains Mono", monospace',
+                      fontSize: '12px',
+                      bgcolor: isDarkMode ? alpha('#fff', 0.08) : alpha('#000', 0.05),
+                      px: 0.5,
+                      py: 0.25,
+                      borderRadius: '3px'
+                    },
+                    '& pre code': {
+                      bgcolor: 'transparent',
+                      p: 0
+                    },
+                    '& img': { maxWidth: '100%', borderRadius: '4px', my: 1 },
+                    '& a': { color: 'primary.main', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } },
+                    '& blockquote': {
+                      borderLeft: '3px solid',
+                      borderColor: isDarkMode ? alpha('#fff', 0.3) : alpha('#000', 0.2),
+                      pl: 2,
+                      ml: 0,
+                      my: 1,
+                      color: 'text.secondary',
+                      fontStyle: 'italic'
+                    },
+                    '& ul, & ol': { pl: 2.5, my: 0.75 },
+                    '& li': { my: 0.25 },
+                    '& hr': { my: 2, borderColor: 'divider' },
+                    '& table': {
+                      borderCollapse: 'collapse',
+                      my: 1,
+                      '& th, & td': {
+                        border: '1px solid',
+                        borderColor: 'divider',
+                        p: 0.75,
+                        textAlign: 'left'
+                      },
+                      '& th': { fontWeight: 600, bgcolor: isDarkMode ? alpha('#fff', 0.03) : alpha('#000', 0.02) }
                     }
                   }}
                 >
-                  <Editor
-                    height={editorHeight}
-                    language={language}
-                    value={source}
-                    onChange={handleEditorChange}
-                    onMount={handleEditorDidMount}
-                    options={{
-                      minimap: { enabled: false },
-                      lineNumbers: 'on',
-                      lineNumbersMinChars: 3,
-                      folding: true,
-                      wordWrap: 'on',
-                      scrollBeyondLastLine: false,
-                      automaticLayout: true,
-                      fontSize: 13,
-                      fontFamily: '"JetBrains Mono", "Fira Code", "Consolas", monospace',
-                      readOnly: readOnly,
-                      renderLineHighlight: isActive ? 'line' : 'none',
-                      scrollbar: {
-                        vertical: 'auto',
-                        horizontal: 'auto',
-                        verticalScrollbarSize: 8,
-                        horizontalScrollbarSize: 8
-                      },
-                      padding: { top: 8, bottom: 8 },
-                      overviewRulerLanes: 0,
-                      hideCursorInOverviewRuler: true,
-                      overviewRulerBorder: false,
-                      contextmenu: true,
-                      glyphMargin: false,
-                      lineDecorationsWidth: 8,
-                      renderWhitespace: 'selection'
-                    }}
-                    theme={isDarkMode ? 'vs-dark' : 'light'}
-                  />
+                  {source ? (
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      rehypePlugins={[rehypeRaw, [rehypeSanitize, defaultSchema]]}
+                    >
+                      {source}
+                    </ReactMarkdown>
+                  ) : (
+                    <Typography color="text.disabled" fontSize="13px" fontStyle="italic">
+                      {t('notebook.emptyMarkdown')}
+                    </Typography>
+                  )}
                 </Box>
-              ) : isMarkdownCell ? (
-                // Markdown 编辑/预览
-                isEditing || isActive ? (
-                  <Box sx={{ p: 2 }}>
-                    <TextField
-                      fullWidth
-                      multiline
-                      minRows={3}
-                      value={source}
-                      onChange={(e) => onUpdate(e.target.value)}
-                      onBlur={() => setIsEditing(false)}
-                      disabled={readOnly}
-                      placeholder={t('notebook.markdownPlaceholder')}
-                      sx={{
-                        '& .MuiInputBase-root': {
-                          fontFamily: '"JetBrains Mono", monospace',
-                          fontSize: '13px',
-                          bgcolor: isDarkMode ? alpha('#000', 0.2) : alpha('#000', 0.02),
-                          borderRadius: '8px'
-                        },
-                        '& .MuiOutlinedInput-notchedOutline': {
-                          borderColor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.1)
-                        }
-                      }}
-                    />
-                  </Box>
-                ) : (
-                  <Box
-                    onClick={() => setIsEditing(true)}
-                    sx={{
-                      p: 2,
-                      cursor: 'pointer',
-                      minHeight: 60,
-                      '& > *:first-of-type': { mt: 0 },
-                      '& > *:last-child': { mb: 0 },
-                      '& h1, & h2, & h3': { 
-                        mt: 2, 
-                        mb: 1,
-                        fontWeight: 600
-                      },
-                      '& p': { my: 1, lineHeight: 1.7 },
-                      '& pre': {
-                        p: 2,
-                        borderRadius: '8px',
-                        bgcolor: isDarkMode ? alpha('#000', 0.3) : alpha('#000', 0.04),
-                        overflowX: 'auto'
-                      },
-                      '& code': {
-                        fontFamily: '"JetBrains Mono", monospace',
-                        fontSize: '13px',
-                        bgcolor: isDarkMode ? alpha('#000', 0.3) : alpha('#000', 0.04),
-                        px: 0.75,
-                        py: 0.25,
-                        borderRadius: '4px'
-                      },
-                      '& pre code': {
-                        bgcolor: 'transparent',
-                        p: 0
-                      },
-                      '& img': { maxWidth: '100%', borderRadius: '8px' },
-                      '& a': { color: 'primary.main' },
-                      '& blockquote': {
-                        borderLeft: '3px solid',
-                        borderColor: 'primary.main',
-                        pl: 2,
-                        ml: 0,
-                        color: 'text.secondary'
-                      },
-                      '& ul, & ol': { pl: 3 },
-                      '& li': { my: 0.5 }
-                    }}
-                  >
-                    {source ? (
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        rehypePlugins={[rehypeRaw, [rehypeSanitize, defaultSchema]]}
-                      >
-                        {source}
-                      </ReactMarkdown>
-                    ) : (
-                      <Typography color="text.secondary" fontStyle="italic" fontSize="13px">
-                        {t('notebook.emptyMarkdown')}
-                      </Typography>
-                    )}
-                  </Box>
-                )
-              ) : (
-                // Raw cell
-                <Box 
-                  component="pre" 
-                  sx={{ 
-                    p: 2, 
-                    m: 0, 
-                    fontFamily: '"JetBrains Mono", monospace', 
-                    fontSize: '13px' 
-                  }}
-                >
-                  {source || t('notebook.emptyCell')}
-                </Box>
-              )}
-            </Box>
-          </Collapse>
-
-          {/* Cell Output */}
-          {isCodeCell && outputs.length > 0 && (
-            <Collapse in={!outputCollapsed}>
+              )
+            ) : (
+              // Raw cell
               <Box 
+                component="pre" 
                 sx={{ 
-                  borderTop: '1px solid', 
-                  borderColor: isDarkMode ? alpha('#fff', 0.08) : alpha('#000', 0.06)
+                  p: 1.5, 
+                  m: 0, 
+                  fontFamily: '"JetBrains Mono", monospace', 
+                  fontSize: '13px' 
                 }}
               >
-                <CellOutput outputs={outputs} isDarkMode={isDarkMode} />
+                {source || t('notebook.emptyCell')}
               </Box>
-            </Collapse>
+            )}
+          </Box>
+
+          {/* Cell Output - VS Code 风格 */}
+          {isCodeCell && hasOutput && (
+            <Box sx={{ mt: 0.5 }}>
+              {/* Output 头部 */}
+              <Box
+                onClick={(e) => { e.stopPropagation(); setOutputCollapsed(!outputCollapsed); }}
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 0.5,
+                  cursor: 'pointer',
+                  py: 0.25,
+                  px: 0.5,
+                  borderRadius: '4px',
+                  '&:hover': {
+                    bgcolor: isDarkMode ? alpha('#fff', 0.05) : alpha('#000', 0.03)
+                  }
+                }}
+              >
+                {outputCollapsed ? (
+                  <ChevronRightIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+                ) : (
+                  <ExpandMoreIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+                )}
+                <StatusIcon />
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '11px' }}>
+                  {outputs.length} output{outputs.length > 1 ? 's' : ''}
+                  {hasError && ' (error)'}
+                </Typography>
+                
+                {/* 清除输出按钮 */}
+                <Box sx={{ flex: 1 }} />
+                <Fade in={isHovered || isActive}>
+                  <IconButton
+                    size="small"
+                    onClick={(e) => { e.stopPropagation(); onClearOutput(); }}
+                    disabled={readOnly}
+                    sx={{ 
+                      width: 20, 
+                      height: 20,
+                      color: 'text.disabled',
+                      '&:hover': { 
+                        bgcolor: isDarkMode ? alpha('#fff', 0.08) : alpha('#000', 0.06),
+                        color: 'text.secondary'
+                      }
+                    }}
+                  >
+                    <ClearIcon sx={{ fontSize: 12 }} />
+                  </IconButton>
+                </Fade>
+              </Box>
+
+              {/* Output 内容 */}
+              <Collapse in={!outputCollapsed}>
+                <Box
+                  sx={{
+                    borderRadius: '4px',
+                    border: '1px solid',
+                    borderColor: hasError 
+                      ? alpha(theme.palette.error.main, 0.3)
+                      : (isDarkMode ? alpha('#fff', 0.08) : alpha('#000', 0.06)),
+                    bgcolor: isDarkMode ? alpha('#000', 0.2) : alpha('#000', 0.02),
+                    maxHeight: 400,
+                    overflow: 'auto'
+                  }}
+                >
+                  <CellOutput outputs={outputs} isDarkMode={isDarkMode} />
+                </Box>
+              </Collapse>
+            </Box>
           )}
         </Box>
       </Box>
@@ -830,102 +900,119 @@ const NotebookCell: React.FC<CellProps> = ({
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
         PaperProps={{
           sx: {
-            minWidth: 200,
+            minWidth: 180,
             borderRadius: '8px',
-            boxShadow: '0 4px 20px rgba(0,0,0,0.15)'
+            boxShadow: isDarkMode 
+              ? '0 4px 20px rgba(0,0,0,0.4)' 
+              : '0 4px 20px rgba(0,0,0,0.12)'
           }
         }}
       >
         <MenuItem onClick={() => { onInsertAbove('code'); handleMenuClose(); }} disabled={readOnly}>
           <ListItemIcon><VerticalAlignTopIcon fontSize="small" /></ListItemIcon>
-          <ListItemText>{t('notebook.insertAbove')}</ListItemText>
-          <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>A</Typography>
+          <ListItemText primaryTypographyProps={{ fontSize: '13px' }}>{t('notebook.insertCodeAbove')}</ListItemText>
         </MenuItem>
         <MenuItem onClick={() => { onInsertBelow('code'); handleMenuClose(); }} disabled={readOnly}>
           <ListItemIcon><VerticalAlignBottomIcon fontSize="small" /></ListItemIcon>
-          <ListItemText>{t('notebook.insertBelow')}</ListItemText>
-          <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>B</Typography>
+          <ListItemText primaryTypographyProps={{ fontSize: '13px' }}>{t('notebook.insertCodeBelow')}</ListItemText>
         </MenuItem>
         <Divider sx={{ my: 0.5 }} />
-        <MenuItem onClick={() => { setCodeHidden(!codeHidden); handleMenuClose(); }}>
-          <ListItemIcon>{codeHidden ? <VisibilityIcon fontSize="small" /> : <VisibilityOffIcon fontSize="small" />}</ListItemIcon>
-          <ListItemText>{codeHidden ? t('notebook.showCode') : t('notebook.hideCode')}</ListItemText>
+        <MenuItem onClick={() => { onInsertAbove('markdown'); handleMenuClose(); }} disabled={readOnly}>
+          <ListItemIcon><TextFieldsIcon fontSize="small" /></ListItemIcon>
+          <ListItemText primaryTypographyProps={{ fontSize: '13px' }}>{t('notebook.insertMarkdownAbove')}</ListItemText>
         </MenuItem>
-        {isCodeCell && (
-          <MenuItem onClick={() => { setOutputCollapsed(!outputCollapsed); handleMenuClose(); }}>
-            <ListItemIcon>{outputCollapsed ? <ExpandMoreIcon fontSize="small" /> : <ExpandLessIcon fontSize="small" />}</ListItemIcon>
-            <ListItemText>{outputCollapsed ? t('notebook.expandOutput') : t('notebook.collapseOutput')}</ListItemText>
-          </MenuItem>
-        )}
-        {isCodeCell && (
-          <MenuItem onClick={() => { onClearOutput(); handleMenuClose(); }} disabled={readOnly || outputs.length === 0}>
-            <ListItemIcon><ClearIcon fontSize="small" /></ListItemIcon>
-            <ListItemText>{t('notebook.clearOutput')}</ListItemText>
-          </MenuItem>
+        <MenuItem onClick={() => { onInsertBelow('markdown'); handleMenuClose(); }} disabled={readOnly}>
+          <ListItemIcon><TextFieldsIcon fontSize="small" /></ListItemIcon>
+          <ListItemText primaryTypographyProps={{ fontSize: '13px' }}>{t('notebook.insertMarkdownBelow')}</ListItemText>
+        </MenuItem>
+        {isCodeCell && hasOutput && (
+          <>
+            <Divider sx={{ my: 0.5 }} />
+            <MenuItem onClick={() => { onClearOutput(); handleMenuClose(); }} disabled={readOnly}>
+              <ListItemIcon><ClearIcon fontSize="small" /></ListItemIcon>
+              <ListItemText primaryTypographyProps={{ fontSize: '13px' }}>{t('notebook.clearOutput')}</ListItemText>
+            </MenuItem>
+          </>
         )}
         <Divider sx={{ my: 0.5 }} />
-        <MenuItem onClick={() => { onDelete(); handleMenuClose(); }} disabled={readOnly || totalCells <= 1}>
+        <MenuItem 
+          onClick={() => { onDelete(); handleMenuClose(); }} 
+          disabled={readOnly || totalCells <= 1}
+          sx={{ color: 'error.main' }}
+        >
           <ListItemIcon><DeleteOutlineIcon fontSize="small" color="error" /></ListItemIcon>
-          <ListItemText sx={{ color: 'error.main' }}>{t('notebook.deleteCell')}</ListItemText>
-          <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>D,D</Typography>
+          <ListItemText primaryTypographyProps={{ fontSize: '13px', color: 'error.main' }}>{t('notebook.deleteCell')}</ListItemText>
         </MenuItem>
       </Menu>
 
-      {/* Add Cell Buttons (显示在当前单元格下方) */}
-      {isActive && !readOnly && (
+      {/* 插入按钮 - 在 cell 之间显示 */}
+      {(isActive || isHovered) && !readOnly && (
         <Box
           sx={{
             display: 'flex',
+            alignItems: 'center',
             justifyContent: 'center',
-            gap: 1,
-            py: 1,
-            opacity: 0.8,
+            gap: 0.5,
+            py: 0.5,
+            opacity: 0.6,
             transition: 'opacity 0.15s',
-            '&:hover': {
-              opacity: 1
-            }
+            '&:hover': { opacity: 1 }
           }}
         >
+          <Box
+            sx={{
+              flex: 1,
+              height: '1px',
+              bgcolor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.08)
+            }}
+          />
           <Button
             size="small"
-            variant="text"
-            startIcon={<CodeIcon sx={{ fontSize: 14 }} />}
+            startIcon={<CodeIcon sx={{ fontSize: '12px !important' }} />}
             onClick={(e) => { e.stopPropagation(); onInsertBelow('code'); }}
-            sx={{ 
-              fontSize: '12px',
+            sx={{
+              fontSize: '11px',
               textTransform: 'none',
               color: 'text.secondary',
-              px: 1.5,
-              py: 0.5,
-              borderRadius: '6px',
+              px: 1,
+              py: 0.25,
+              minHeight: 22,
+              borderRadius: '4px',
               '&:hover': {
-                bgcolor: isDarkMode ? alpha('#fff', 0.08) : alpha('#000', 0.06),
+                bgcolor: isDarkMode ? alpha('#fff', 0.08) : alpha('#000', 0.05),
                 color: 'primary.main'
               }
             }}
           >
-            {t('notebook.addCode')}
+            Code
           </Button>
           <Button
             size="small"
-            variant="text"
-            startIcon={<TextFieldsIcon sx={{ fontSize: 14 }} />}
+            startIcon={<TextFieldsIcon sx={{ fontSize: '12px !important' }} />}
             onClick={(e) => { e.stopPropagation(); onInsertBelow('markdown'); }}
-            sx={{ 
-              fontSize: '12px',
+            sx={{
+              fontSize: '11px',
               textTransform: 'none',
               color: 'text.secondary',
-              px: 1.5,
-              py: 0.5,
-              borderRadius: '6px',
+              px: 1,
+              py: 0.25,
+              minHeight: 22,
+              borderRadius: '4px',
               '&:hover': {
-                bgcolor: isDarkMode ? alpha('#fff', 0.08) : alpha('#000', 0.06),
+                bgcolor: isDarkMode ? alpha('#fff', 0.08) : alpha('#000', 0.05),
                 color: 'primary.main'
               }
             }}
           >
-            {t('notebook.addMarkdown')}
+            Markdown
           </Button>
+          <Box
+            sx={{
+              flex: 1,
+              height: '1px',
+              bgcolor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.08)
+            }}
+          />
         </Box>
       )}
     </Box>
@@ -937,16 +1024,51 @@ export const NotebookEditor: React.FC<NotebookEditorProps> = ({
   content,
   height = '100%',
   onChange,
-  readOnly = false
+  onSave,
+  onPatchSave,
+  readOnly = false,
+  isDirty = false,
+  autoSaveEnabled = true,
+  onAutoSaveChange: _onAutoSaveChange
 }) => {
   const { t } = useTranslation();
-  const theme = useTheme();
   const { theme: themeMode } = useApp();
   const isDarkMode = themeMode === 'dark';
   
+  // Kernel context
+  const {
+    kernelSpecs,
+    currentKernel,
+    kernelStatus: realKernelStatus,
+    isConnected,
+    isConnecting,
+    connectKernel,
+    disconnectKernel,
+    restartCurrentKernel,
+    interruptCurrentKernel,
+    executeCode,
+  } = useKernel();
+  
   const [activeCellIndex, setActiveCellIndex] = useState<number>(0);
   const [runningCells, setRunningCells] = useState<Set<number>>(new Set());
-  const [kernelStatus, setKernelStatus] = useState<'disconnected' | 'connecting' | 'idle' | 'busy'>('disconnected');
+  const [isSaving, setIsSaving] = useState(false);
+  const [lastSavedTime, setLastSavedTime] = useState<Date | null>(null);
+  const [allCollapsed, setAllCollapsed] = useState(false);
+  const [selectedKernelSpec, setSelectedKernelSpec] = useState<string>('python3');
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  
+  // Derive kernel status for UI
+  const kernelStatus = useMemo((): 'disconnected' | 'connecting' | 'idle' | 'busy' => {
+    if (isConnecting) return 'connecting';
+    if (!isConnected) return 'disconnected';
+    if (realKernelStatus === 'busy') return 'busy';
+    return 'idle';
+  }, [isConnected, isConnecting, realKernelStatus]);
+  
+  // 增量更新：跟踪待保存的操作
+  const pendingOperationsRef = useRef<CellOperation[]>([]);
+  const savedCellsRef = useRef<NotebookCell[]>([]);
 
   // 解析 notebook
   const { notebook, error } = useMemo(() => {
@@ -969,7 +1091,6 @@ export const NotebookEditor: React.FC<NotebookEditorProps> = ({
     }
     try {
       const parsed = JSON.parse(content) as NotebookData;
-      // 确保每个 cell 有 id
       parsed.cells = parsed.cells.map(cell => ({
         ...cell,
         id: cell.id || generateCellId()
@@ -985,16 +1106,80 @@ export const NotebookEditor: React.FC<NotebookEditorProps> = ({
 
   const [cells, setCells] = useState<NotebookCell[]>(notebook?.cells ?? [createEmptyCell('code')]);
   
-  // 当 content 变化时更新 cells
   useEffect(() => {
     if (notebook?.cells) {
       setCells(notebook.cells);
+      savedCellsRef.current = JSON.parse(JSON.stringify(notebook.cells));
+      pendingOperationsRef.current = [];
     }
   }, [notebook?.cells]);
 
   const language = notebook?.metadata?.kernelspec?.language || notebook?.metadata?.language_info?.name || 'python';
 
-  // 更新 notebook 并通知父组件
+  const addPendingOperation = useCallback((op: CellOperation) => {
+    const lastOp = pendingOperationsRef.current[pendingOperationsRef.current.length - 1];
+    if (lastOp && lastOp.op === 'update' && op.op === 'update' && lastOp.cell_id === op.cell_id) {
+      pendingOperationsRef.current[pendingOperationsRef.current.length - 1] = op;
+    } else {
+      pendingOperationsRef.current.push(op);
+    }
+  }, []);
+
+  const handleSave = useCallback(async () => {
+    if (readOnly || isSaving) return;
+    
+    setIsSaving(true);
+    try {
+      if (onPatchSave && pendingOperationsRef.current.length > 0) {
+        await onPatchSave([...pendingOperationsRef.current]);
+        pendingOperationsRef.current = [];
+        savedCellsRef.current = JSON.parse(JSON.stringify(cells));
+      } else if (onSave) {
+        await onSave();
+        pendingOperationsRef.current = [];
+        savedCellsRef.current = JSON.parse(JSON.stringify(cells));
+      }
+      setLastSavedTime(new Date());
+    } catch (error) {
+      console.error('保存失败:', error);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [onPatchSave, onSave, readOnly, isSaving, cells]);
+
+  useEffect(() => {
+    if (!autoSaveEnabled || !isDirty || readOnly) return;
+    if (!onPatchSave && !onSave) return;
+
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+
+    autoSaveTimerRef.current = setTimeout(async () => {
+      await handleSave();
+    }, 2000);
+
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+    };
+  }, [autoSaveEnabled, isDirty, readOnly, onSave, onPatchSave, handleSave]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        handleSave();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [handleSave]);
+
   const updateNotebook = useCallback((newCells: NotebookCell[]) => {
     setCells(newCells);
     if (onChange && notebook) {
@@ -1012,47 +1197,141 @@ export const NotebookEditor: React.FC<NotebookEditorProps> = ({
   // 单元格操作
   const handleUpdateCell = useCallback((index: number, source: string) => {
     const newCells = [...cells];
-    newCells[index] = { ...newCells[index], source };
+    const cell = newCells[index];
+    newCells[index] = { ...cell, source };
+    
+    if (cell.id) {
+      addPendingOperation({
+        op: 'update',
+        cell_id: cell.id,
+        cell: { ...newCells[index], source: textToArray(source) }
+      });
+    }
+    
     updateNotebook(newCells);
-  }, [cells, updateNotebook]);
+  }, [cells, updateNotebook, addPendingOperation]);
 
   const handleRunCell = useCallback(async (index: number) => {
-    if (kernelStatus === 'disconnected') {
-      // 模拟连接
-      setKernelStatus('connecting');
-      await new Promise(r => setTimeout(r, 1000));
-      setKernelStatus('idle');
+    const cell = cells[index];
+    if (cell.cell_type !== 'code') return;
+    
+    // If not connected, try to connect first
+    if (!isConnected) {
+      try {
+        await connectKernel(selectedKernelSpec);
+      } catch (error) {
+        console.error('Failed to connect kernel:', error);
+        return;
+      }
     }
     
     setRunningCells(prev => new Set(prev).add(index));
-    setKernelStatus('busy');
     
-    // 模拟执行
-    await new Promise(r => setTimeout(r, 1500));
-    
+    // Clear existing outputs
     const newCells = [...cells];
-    const cell = newCells[index];
-    if (cell.cell_type === 'code') {
-      const currentCount = Math.max(...cells.map(c => c.execution_count || 0), 0) + 1;
-      newCells[index] = {
-        ...cell,
-        execution_count: currentCount,
-        outputs: [{
-          output_type: 'stream',
-          name: 'stdout',
-          text: `# Cell executed successfully\n# Execution count: ${currentCount}\n`
-        }]
-      };
-      updateNotebook(newCells);
-    }
+    newCells[index] = {
+      ...cell,
+      outputs: [],
+      execution_count: null,
+    };
+    setCells(newCells);
     
-    setRunningCells(prev => {
-      const next = new Set(prev);
-      next.delete(index);
-      return next;
-    });
-    setKernelStatus('idle');
-  }, [cells, updateNotebook, kernelStatus]);
+    const code = normalizeText(cell.source);
+    const cellId = cell.id || `cell_${index}`;
+    
+    const outputs: NotebookOutput[] = [];
+    
+    executeCode(
+      cellId,
+      code,
+      // onOutput callback
+      (output: CellOutput) => {
+        let notebookOutput: NotebookOutput;
+        
+        if (output.output_type === 'stream') {
+          notebookOutput = {
+            output_type: 'stream',
+            name: output.name || 'stdout',
+            text: typeof output.text === 'string' ? output.text : (output.text || []).join(''),
+          };
+        } else if (output.output_type === 'execute_result') {
+          notebookOutput = {
+            output_type: 'execute_result',
+            data: (output.data as Record<string, string>) || {},
+            metadata: {},
+            execution_count: output.execution_count,
+          };
+        } else if (output.output_type === 'error') {
+          notebookOutput = {
+            output_type: 'error',
+            ename: output.ename || 'Error',
+            evalue: output.evalue || '',
+            traceback: output.traceback || [],
+          };
+        } else {
+          notebookOutput = {
+            output_type: 'display_data',
+            data: (output.data as Record<string, string>) || {},
+            metadata: {},
+          };
+        }
+        
+        outputs.push(notebookOutput);
+        
+        // Update cell with new output
+        setCells(prevCells => {
+          const updated = [...prevCells];
+          updated[index] = {
+            ...updated[index],
+            outputs: [...outputs],
+          };
+          return updated;
+        });
+      },
+      // onComplete callback
+      (_success: boolean, executionCount?: number) => {
+        setCells(prevCells => {
+          const updated = [...prevCells];
+          updated[index] = {
+            ...updated[index],
+            execution_count: executionCount || null,
+          };
+          
+          // Trigger pending operation for save
+          if (updated[index].id) {
+            addPendingOperation({
+              op: 'update',
+              cell_id: updated[index].id,
+              cell: { ...updated[index], source: textToArray(normalizeText(updated[index].source)) }
+            });
+          }
+          
+          return updated;
+        });
+        
+        setRunningCells(prev => {
+          const next = new Set(prev);
+          next.delete(index);
+          return next;
+        });
+        
+        // Trigger onChange
+        if (onChange && notebook) {
+          setCells(currentCells => {
+            const updatedNotebook: NotebookData = {
+              ...notebook,
+              cells: currentCells.map(c => ({
+                ...c,
+                source: textToArray(normalizeText(c.source))
+              }))
+            };
+            onChange(JSON.stringify(updatedNotebook, null, 2));
+            return currentCells;
+          });
+        }
+      }
+    );
+  }, [cells, isConnected, connectKernel, selectedKernelSpec, executeCode, addPendingOperation, onChange, notebook]);
 
   const handleRunAll = useCallback(async () => {
     for (let i = 0; i < cells.length; i++) {
@@ -1064,115 +1343,204 @@ export const NotebookEditor: React.FC<NotebookEditorProps> = ({
 
   const handleDeleteCell = useCallback((index: number) => {
     if (cells.length <= 1) return;
+    const deletedCell = cells[index];
     const newCells = cells.filter((_, i) => i !== index);
+    
+    if (deletedCell.id) {
+      addPendingOperation({ op: 'delete', cell_id: deletedCell.id });
+    }
+    
     updateNotebook(newCells);
     if (activeCellIndex >= newCells.length) {
       setActiveCellIndex(newCells.length - 1);
     }
-  }, [cells, updateNotebook, activeCellIndex]);
+  }, [cells, updateNotebook, activeCellIndex, addPendingOperation]);
 
   const handleDuplicateCell = useCallback((index: number) => {
     const newCells = [...cells];
     const duplicated = { ...cells[index], id: generateCellId() };
     newCells.splice(index + 1, 0, duplicated);
+    
+    addPendingOperation({
+      op: 'add',
+      index: index + 1,
+      cell: { ...duplicated, source: textToArray(normalizeText(duplicated.source)) }
+    });
+    
     updateNotebook(newCells);
     setActiveCellIndex(index + 1);
-  }, [cells, updateNotebook]);
+  }, [cells, updateNotebook, addPendingOperation]);
 
   const handleMoveUp = useCallback((index: number) => {
     if (index === 0) return;
+    const cell = cells[index];
     const newCells = [...cells];
     [newCells[index - 1], newCells[index]] = [newCells[index], newCells[index - 1]];
+    
+    if (cell.id) {
+      addPendingOperation({ op: 'move', cell_id: cell.id, index: index - 1, old_index: index });
+    }
+    
     updateNotebook(newCells);
     setActiveCellIndex(index - 1);
-  }, [cells, updateNotebook]);
+  }, [cells, updateNotebook, addPendingOperation]);
 
   const handleMoveDown = useCallback((index: number) => {
     if (index >= cells.length - 1) return;
+    const cell = cells[index];
     const newCells = [...cells];
     [newCells[index], newCells[index + 1]] = [newCells[index + 1], newCells[index]];
+    
+    if (cell.id) {
+      addPendingOperation({ op: 'move', cell_id: cell.id, index: index + 1, old_index: index });
+    }
+    
     updateNotebook(newCells);
     setActiveCellIndex(index + 1);
-  }, [cells, updateNotebook]);
+  }, [cells, updateNotebook, addPendingOperation]);
 
   const handleInsertAbove = useCallback((index: number, type: 'code' | 'markdown' = 'code') => {
     const newCells = [...cells];
-    newCells.splice(index, 0, createEmptyCell(type));
+    const newCell = createEmptyCell(type);
+    newCells.splice(index, 0, newCell);
+    
+    addPendingOperation({ op: 'add', index: index, cell: { ...newCell, source: [] } });
+    
     updateNotebook(newCells);
     setActiveCellIndex(index);
-  }, [cells, updateNotebook]);
+  }, [cells, updateNotebook, addPendingOperation]);
 
   const handleInsertBelow = useCallback((index: number, type: 'code' | 'markdown' = 'code') => {
     const newCells = [...cells];
-    newCells.splice(index + 1, 0, createEmptyCell(type));
+    const newCell = createEmptyCell(type);
+    newCells.splice(index + 1, 0, newCell);
+    
+    addPendingOperation({ op: 'add', index: index + 1, cell: { ...newCell, source: [] } });
+    
     updateNotebook(newCells);
     setActiveCellIndex(index + 1);
-  }, [cells, updateNotebook]);
+  }, [cells, updateNotebook, addPendingOperation]);
 
   const handleChangeType = useCallback((index: number, type: 'code' | 'markdown') => {
     const newCells = [...cells];
+    const cell = newCells[index];
     newCells[index] = {
-      ...newCells[index],
+      ...cell,
       cell_type: type,
       outputs: type === 'code' ? [] : undefined,
       execution_count: type === 'code' ? null : undefined
     };
+    
+    if (cell.id) {
+      addPendingOperation({
+        op: 'update',
+        cell_id: cell.id,
+        cell: { ...newCells[index], source: textToArray(normalizeText(newCells[index].source)) }
+      });
+    }
+    
     updateNotebook(newCells);
-  }, [cells, updateNotebook]);
+  }, [cells, updateNotebook, addPendingOperation]);
 
   const handleClearOutput = useCallback((index: number) => {
     const newCells = [...cells];
-    newCells[index] = { ...newCells[index], outputs: [], execution_count: null };
+    const cell = newCells[index];
+    newCells[index] = { ...cell, outputs: [], execution_count: null };
+    
+    if (cell.id) {
+      addPendingOperation({
+        op: 'update',
+        cell_id: cell.id,
+        cell: { ...newCells[index], source: textToArray(normalizeText(newCells[index].source)) }
+      });
+    }
+    
     updateNotebook(newCells);
-  }, [cells, updateNotebook]);
+  }, [cells, updateNotebook, addPendingOperation]);
 
   const handleClearAllOutputs = useCallback(() => {
-    const newCells = cells.map(cell => ({
-      ...cell,
-      outputs: cell.cell_type === 'code' ? [] : cell.outputs,
-      execution_count: cell.cell_type === 'code' ? null : cell.execution_count
-    }));
+    const newCells = cells.map(cell => {
+      const updatedCell = {
+        ...cell,
+        outputs: cell.cell_type === 'code' ? [] : cell.outputs,
+        execution_count: cell.cell_type === 'code' ? null : cell.execution_count
+      };
+      
+      if (cell.id && cell.cell_type === 'code') {
+        addPendingOperation({
+          op: 'update',
+          cell_id: cell.id,
+          cell: { ...updatedCell, source: textToArray(normalizeText(updatedCell.source)) }
+        });
+      }
+      
+      return updatedCell;
+    });
     updateNotebook(newCells);
-  }, [cells, updateNotebook]);
+  }, [cells, updateNotebook, addPendingOperation]);
 
   const handleConnectKernel = useCallback(async () => {
-    if (kernelStatus === 'disconnected') {
-      setKernelStatus('connecting');
-      await new Promise(r => setTimeout(r, 1500));
-      setKernelStatus('idle');
+    if (!isConnected) {
+      try {
+        await connectKernel(selectedKernelSpec);
+      } catch (error) {
+        console.error('Failed to connect kernel:', error);
+      }
+    } else {
+      try {
+        await disconnectKernel();
+      } catch (error) {
+        console.error('Failed to disconnect kernel:', error);
+      }
     }
-  }, [kernelStatus]);
+  }, [isConnected, connectKernel, disconnectKernel, selectedKernelSpec]);
 
-  const handleDisconnectKernel = useCallback(() => {
-    setKernelStatus('disconnected');
-  }, []);
+  const handleRestartKernel = useCallback(async () => {
+    try {
+      await restartCurrentKernel();
+    } catch (error) {
+      console.error('Failed to restart kernel:', error);
+    }
+  }, [restartCurrentKernel]);
+  
+  const handleInterruptKernel = useCallback(async () => {
+    try {
+      await interruptCurrentKernel();
+    } catch (error) {
+      console.error('Failed to interrupt kernel:', error);
+    }
+  }, [interruptCurrentKernel]);
 
   // Kernel 状态配置
   const getKernelStatusConfig = () => {
     switch (kernelStatus) {
       case 'disconnected':
         return { 
-          color: isDarkMode ? alpha('#fff', 0.5) : alpha('#000', 0.4),
-          icon: <FiberManualRecordIcon sx={{ fontSize: 10 }} />,
-          label: t('notebook.disconnected')
+          color: isDarkMode ? '#6B7280' : '#9CA3AF',
+          bgColor: isDarkMode ? alpha('#fff', 0.05) : alpha('#000', 0.04),
+          icon: <FiberManualRecordIcon sx={{ fontSize: 8 }} />,
+          label: 'Disconnected'
         };
       case 'connecting':
         return { 
-          color: theme.palette.warning.main,
-          icon: <CircularProgress size={10} sx={{ color: 'warning.main' }} />,
-          label: t('notebook.connecting')
+          color: '#F59E0B',
+          bgColor: alpha('#F59E0B', 0.1),
+          icon: <CircularProgress size={8} sx={{ color: '#F59E0B' }} />,
+          label: 'Connecting...'
         };
       case 'busy':
         return { 
-          color: theme.palette.warning.main,
-          icon: <CircularProgress size={10} sx={{ color: 'warning.main' }} />,
-          label: t('notebook.busy')
+          color: '#F59E0B',
+          bgColor: alpha('#F59E0B', 0.1),
+          icon: <CircularProgress size={8} sx={{ color: '#F59E0B' }} />,
+          label: 'Busy'
         };
       case 'idle':
         return { 
-          color: theme.palette.success.main,
-          icon: <FiberManualRecordIcon sx={{ fontSize: 10, color: 'success.main' }} />,
-          label: t('notebook.idle')
+          color: '#10B981',
+          bgColor: alpha('#10B981', 0.1),
+          icon: <FiberManualRecordIcon sx={{ fontSize: 8, color: '#10B981' }} />,
+          label: 'Idle'
         };
     }
   };
@@ -1182,193 +1550,326 @@ export const NotebookEditor: React.FC<NotebookEditorProps> = ({
   if (error) {
     return (
       <Box sx={{ height, overflow: 'auto', p: 3 }}>
-        <Paper
+        <Box
           sx={{
             p: 3,
-            borderRadius: '12px',
+            borderRadius: '8px',
             border: '1px solid',
             borderColor: 'error.main',
             bgcolor: isDarkMode ? alpha('#ff1744', 0.1) : alpha('#ff1744', 0.05)
           }}
         >
           <Typography color="error" fontWeight={600} sx={{ mb: 2 }}>
-            {t('notebook.invalid')}: {error}
+            Invalid Notebook Format
+          </Typography>
+          <Typography color="error.main" fontSize="13px" sx={{ mb: 2 }}>
+            {error}
           </Typography>
           <Box
             component="pre"
             sx={{
               m: 0, 
               p: 2, 
-              borderRadius: '8px', 
+              borderRadius: '4px', 
               bgcolor: isDarkMode ? alpha('#000', 0.3) : alpha('#000', 0.04),
-              fontSize: '13px', 
+              fontSize: '12px', 
               fontFamily: '"JetBrains Mono", monospace', 
               whiteSpace: 'pre-wrap',
-              overflowX: 'auto'
+              overflowX: 'auto',
+              maxHeight: 300
             }}
           >
             {content}
           </Box>
-        </Paper>
+        </Box>
       </Box>
     );
   }
 
   return (
-    <Box sx={{ height, display: 'flex', flexDirection: 'column', bgcolor: 'background.default' }}>
-      {/* Toolbar */}
+    <Box 
+      ref={containerRef} 
+      tabIndex={-1} 
+      sx={{ 
+        height, 
+        display: 'flex', 
+        flexDirection: 'column', 
+        bgcolor: isDarkMode ? '#1e1e1e' : '#ffffff',
+        outline: 'none'
+      }}
+    >
+      {/* VS Code 风格顶部工具栏 */}
       <Box
         sx={{
           display: 'flex',
           alignItems: 'center',
-          gap: 1,
-          px: 2,
-          py: 1,
+          gap: 0.5,
+          px: 1,
+          py: 0.5,
           borderBottom: '1px solid',
           borderColor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.08),
-          bgcolor: isDarkMode ? alpha('#fff', 0.02) : 'background.paper',
-          flexShrink: 0
+          bgcolor: isDarkMode ? '#252526' : '#f3f3f3',
+          flexShrink: 0,
+          minHeight: 36
         }}
       >
         {/* 运行按钮组 */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-          <Tooltip title={t('notebook.runCell')} arrow>
-            <span>
-              <IconButton
-                size="small"
-                onClick={() => handleRunCell(activeCellIndex)}
-                disabled={readOnly || cells[activeCellIndex]?.cell_type !== 'code' || kernelStatus === 'connecting'}
-                sx={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: '8px',
-                  bgcolor: 'primary.main',
-                  color: 'white',
-                  '&:hover': { bgcolor: 'primary.dark' },
-                  '&:disabled': { 
-                    bgcolor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.08),
-                    color: isDarkMode ? alpha('#fff', 0.3) : alpha('#000', 0.3)
-                  }
-                }}
-              >
-                <PlayArrowIcon sx={{ fontSize: 18 }} />
-              </IconButton>
-            </span>
-          </Tooltip>
+        <Tooltip title={`${t('notebook.runCell')} (Shift+Enter)`} arrow>
+          <span>
+            <IconButton
+              size="small"
+              onClick={() => handleRunCell(activeCellIndex)}
+              disabled={readOnly || cells[activeCellIndex]?.cell_type !== 'code' || kernelStatus === 'connecting'}
+              sx={{
+                width: 28,
+                height: 28,
+                borderRadius: '4px',
+                color: isDarkMode ? '#cccccc' : '#424242',
+                '&:hover': { bgcolor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.08) },
+                '&:disabled': { color: isDarkMode ? '#5a5a5a' : '#bdbdbd' }
+              }}
+            >
+              <PlayArrowIcon sx={{ fontSize: 18 }} />
+            </IconButton>
+          </span>
+        </Tooltip>
 
-          <Tooltip title={t('notebook.runAll')} arrow>
-            <span>
-              <IconButton
-                size="small"
-                onClick={handleRunAll}
-                disabled={readOnly || kernelStatus === 'connecting'}
-                sx={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: '8px',
-                  bgcolor: isDarkMode ? alpha('#fff', 0.08) : alpha('#000', 0.06),
-                  '&:hover': { bgcolor: isDarkMode ? alpha('#fff', 0.12) : alpha('#000', 0.1) }
-                }}
-              >
-                <PlaylistPlayIcon sx={{ fontSize: 18 }} />
-              </IconButton>
-            </span>
-          </Tooltip>
+        <Tooltip title={t('notebook.runAll')} arrow>
+          <span>
+            <IconButton
+              size="small"
+              onClick={handleRunAll}
+              disabled={readOnly || kernelStatus === 'connecting'}
+              sx={{
+                width: 28,
+                height: 28,
+                borderRadius: '4px',
+                color: isDarkMode ? '#cccccc' : '#424242',
+                '&:hover': { bgcolor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.08) }
+              }}
+            >
+              <PlaylistPlayIcon sx={{ fontSize: 18 }} />
+            </IconButton>
+          </span>
+        </Tooltip>
 
-          <Tooltip title={t('notebook.stopExecution')} arrow>
-            <span>
-              <IconButton
-                size="small"
-                disabled={kernelStatus !== 'busy'}
-                sx={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: '8px',
-                  bgcolor: isDarkMode ? alpha('#fff', 0.08) : alpha('#000', 0.06),
-                  '&:hover': { bgcolor: alpha(theme.palette.error.main, 0.15) },
-                  '&:disabled': { 
-                    color: isDarkMode ? alpha('#fff', 0.2) : alpha('#000', 0.2)
+        <Divider orientation="vertical" flexItem sx={{ mx: 0.5, height: 20, alignSelf: 'center' }} />
+
+        <Tooltip title={t('notebook.stopExecution')} arrow>
+          <span>
+            <IconButton
+              size="small"
+              onClick={handleInterruptKernel}
+              disabled={kernelStatus !== 'busy'}
+              sx={{
+                width: 28,
+                height: 28,
+                borderRadius: '4px',
+                color: isDarkMode ? '#cccccc' : '#424242',
+                '&:hover': { bgcolor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.08) },
+                '&:disabled': { color: isDarkMode ? '#5a5a5a' : '#bdbdbd' }
+              }}
+            >
+              <StopIcon sx={{ fontSize: 18 }} />
+            </IconButton>
+          </span>
+        </Tooltip>
+
+        <Tooltip title={t('notebook.restartKernel')} arrow>
+          <span>
+            <IconButton
+              size="small"
+              onClick={handleRestartKernel}
+              disabled={kernelStatus === 'disconnected'}
+              sx={{
+                width: 28,
+                height: 28,
+                borderRadius: '4px',
+                color: isDarkMode ? '#cccccc' : '#424242',
+                '&:hover': { bgcolor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.08) },
+                '&:disabled': { color: isDarkMode ? '#5a5a5a' : '#bdbdbd' }
+              }}
+            >
+              <RestartAltIcon sx={{ fontSize: 18 }} />
+            </IconButton>
+          </span>
+        </Tooltip>
+
+        <Divider orientation="vertical" flexItem sx={{ mx: 0.5, height: 20, alignSelf: 'center' }} />
+
+        {/* 清除输出 */}
+        <Tooltip title={t('notebook.clearAllOutputs')} arrow>
+          <span>
+            <IconButton
+              size="small"
+              onClick={handleClearAllOutputs}
+              disabled={readOnly}
+              sx={{
+                width: 28,
+                height: 28,
+                borderRadius: '4px',
+                color: isDarkMode ? '#cccccc' : '#424242',
+                '&:hover': { bgcolor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.08) }
+              }}
+            >
+              <ClearIcon sx={{ fontSize: 16 }} />
+            </IconButton>
+          </span>
+        </Tooltip>
+
+        {/* 折叠/展开所有 */}
+        <Tooltip title={allCollapsed ? t('notebook.expandAll') : t('notebook.collapseAll')} arrow>
+          <IconButton
+            size="small"
+            onClick={() => setAllCollapsed(!allCollapsed)}
+            sx={{
+              width: 28,
+              height: 28,
+              borderRadius: '4px',
+              color: isDarkMode ? '#cccccc' : '#424242',
+              '&:hover': { bgcolor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.08) }
+            }}
+          >
+            {allCollapsed ? <UnfoldMoreIcon sx={{ fontSize: 16 }} /> : <UnfoldLessIcon sx={{ fontSize: 16 }} />}
+          </IconButton>
+        </Tooltip>
+
+        <Box sx={{ flex: 1 }} />
+
+        {/* 保存状态 */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mr: 1 }}>
+          {isSaving ? (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <AutorenewIcon 
+                sx={{ 
+                  fontSize: 14, 
+                  color: 'primary.main',
+                  animation: 'spin 1s linear infinite',
+                  '@keyframes spin': {
+                    '0%': { transform: 'rotate(0deg)' },
+                    '100%': { transform: 'rotate(360deg)' }
                   }
-                }}
-              >
-                <StopIcon sx={{ fontSize: 18 }} />
-              </IconButton>
-            </span>
-          </Tooltip>
+                }} 
+              />
+              <Typography variant="caption" sx={{ fontSize: '11px', color: 'text.secondary' }}>
+                Saving...
+              </Typography>
+            </Box>
+          ) : isDirty ? (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <FiberManualRecordIcon sx={{ fontSize: 8, color: 'warning.main' }} />
+              <Typography variant="caption" sx={{ fontSize: '11px', color: 'warning.main' }}>
+                Modified
+              </Typography>
+            </Box>
+          ) : lastSavedTime ? (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <CloudDoneIcon sx={{ fontSize: 14, color: 'success.main' }} />
+              <Typography variant="caption" sx={{ fontSize: '11px', color: 'text.secondary' }}>
+                Saved
+              </Typography>
+            </Box>
+          ) : null}
         </Box>
 
-        <Divider orientation="vertical" flexItem sx={{ mx: 1, height: 24, alignSelf: 'center' }} />
+        {/* 保存按钮 */}
+        <Tooltip title={`Save (${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+S)`} arrow>
+          <span>
+            <IconButton
+              size="small"
+              onClick={handleSave}
+              disabled={readOnly || isSaving || !isDirty}
+              sx={{
+                width: 28,
+                height: 28,
+                borderRadius: '4px',
+                color: isDirty ? 'primary.main' : (isDarkMode ? '#5a5a5a' : '#bdbdbd'),
+                '&:hover': { bgcolor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.08) },
+                '&:disabled': { color: isDarkMode ? '#5a5a5a' : '#bdbdbd' }
+              }}
+            >
+              <SaveIcon sx={{ fontSize: 16 }} />
+            </IconButton>
+          </span>
+        </Tooltip>
+
+        <Divider orientation="vertical" flexItem sx={{ mx: 0.5, height: 20, alignSelf: 'center' }} />
+
+        {/* Kernel 选择器 */}
+        {!isConnected && Object.keys(kernelSpecs).length > 0 && (
+          <FormControl size="small" sx={{ minWidth: 100 }}>
+            <Select
+              value={selectedKernelSpec}
+              onChange={(e) => setSelectedKernelSpec(e.target.value)}
+              sx={{
+                height: 24,
+                fontSize: '11px',
+                bgcolor: isDarkMode ? alpha('#fff', 0.05) : alpha('#000', 0.04),
+                '& .MuiSelect-select': {
+                  py: 0.25,
+                  px: 1,
+                },
+                '& .MuiOutlinedInput-notchedOutline': {
+                  borderColor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.1),
+                },
+                '&:hover .MuiOutlinedInput-notchedOutline': {
+                  borderColor: isDarkMode ? alpha('#fff', 0.2) : alpha('#000', 0.2),
+                }
+              }}
+            >
+              {Object.entries(kernelSpecs).map(([name, spec]) => (
+                <MenuItem key={name} value={name} sx={{ fontSize: '12px' }}>
+                  {spec.display_name}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        )}
+
+        {/* Kernel 连接按钮 */}
+        <Tooltip title={isConnected ? 'Disconnect Kernel' : 'Connect Kernel'} arrow>
+          <IconButton
+            size="small"
+            onClick={handleConnectKernel}
+            disabled={isConnecting}
+            sx={{
+              width: 28,
+              height: 28,
+              borderRadius: '4px',
+              color: isConnected ? '#10B981' : (isDarkMode ? '#cccccc' : '#424242'),
+              '&:hover': { bgcolor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.08) }
+            }}
+          >
+            {isConnected ? <LinkIcon sx={{ fontSize: 16 }} /> : <LinkOffIcon sx={{ fontSize: 16 }} />}
+          </IconButton>
+        </Tooltip>
 
         {/* Kernel 状态 */}
-        <Box
-          onClick={kernelStatus === 'disconnected' ? handleConnectKernel : undefined}
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 1,
-            px: 1.5,
-            py: 0.75,
-            borderRadius: '8px',
-            bgcolor: isDarkMode ? alpha('#fff', 0.05) : alpha('#000', 0.04),
-            cursor: kernelStatus === 'disconnected' ? 'pointer' : 'default',
-            transition: 'all 0.15s',
-            '&:hover': kernelStatus === 'disconnected' ? {
-              bgcolor: isDarkMode ? alpha('#fff', 0.08) : alpha('#000', 0.06)
-            } : {}
-          }}
-        >
-          <TerminalIcon sx={{ fontSize: 16, color: kernelConfig.color }} />
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+        <Tooltip title={`Kernel: ${kernelConfig.label}${currentKernel ? ` (${currentKernel.name})` : ''}`} arrow>
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.5,
+              px: 1,
+              py: 0.25,
+              borderRadius: '4px',
+              bgcolor: kernelConfig.bgColor,
+              cursor: 'default',
+              transition: 'all 0.15s',
+            }}
+          >
             {kernelConfig.icon}
             <Typography 
-              variant="caption" 
               sx={{ 
+                fontSize: '11px',
                 fontWeight: 500,
-                color: kernelConfig.color,
-                fontSize: '12px'
+                color: kernelConfig.color
               }}
             >
               {kernelConfig.label}
             </Typography>
           </Box>
-        </Box>
-
-        {kernelStatus !== 'disconnected' && (
-          <Tooltip title={t('notebook.disconnectKernel')} arrow>
-            <IconButton 
-              size="small" 
-              onClick={handleDisconnectKernel}
-              sx={{
-                width: 28,
-                height: 28,
-                borderRadius: '6px',
-                '&:hover': { bgcolor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.06) }
-              }}
-            >
-              <PowerOffIcon sx={{ fontSize: 16 }} />
-            </IconButton>
-          </Tooltip>
-        )}
-
-        <Box sx={{ flex: 1 }} />
-
-        {/* 清除输出 */}
-        <Tooltip title={t('notebook.clearAllOutputs')} arrow>
-          <span>
-            <IconButton 
-              size="small" 
-              onClick={handleClearAllOutputs} 
-              disabled={readOnly}
-              sx={{
-                width: 32,
-                height: 32,
-                borderRadius: '8px',
-                '&:hover': { bgcolor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.06) }
-              }}
-            >
-              <ClearIcon sx={{ fontSize: 18 }} />
-            </IconButton>
-          </span>
         </Tooltip>
 
         {/* 语言显示 */}
@@ -1376,74 +1877,81 @@ export const NotebookEditor: React.FC<NotebookEditorProps> = ({
           label={language.charAt(0).toUpperCase() + language.slice(1)}
           size="small"
           sx={{
-            height: 26,
-            fontSize: '12px',
+            height: 20,
+            fontSize: '11px',
             fontWeight: 500,
             bgcolor: isDarkMode ? alpha('#fff', 0.08) : alpha('#000', 0.06),
+            color: isDarkMode ? '#cccccc' : '#616161',
             border: 'none',
-            '& .MuiChip-label': { px: 1.5 }
+            '& .MuiChip-label': { px: 1 }
           }}
         />
       </Box>
 
-      {/* Cells */}
+      {/* Cells 容器 */}
       <Box 
         sx={{ 
           flex: 1, 
           overflow: 'auto', 
-          p: 2, 
-          pb: 8,
+          py: 1,
           '&::-webkit-scrollbar': {
-            width: 8
+            width: 10
           },
           '&::-webkit-scrollbar-track': {
             bgcolor: 'transparent'
           },
           '&::-webkit-scrollbar-thumb': {
-            bgcolor: isDarkMode ? alpha('#fff', 0.2) : alpha('#000', 0.15),
-            borderRadius: 4,
+            bgcolor: isDarkMode ? alpha('#fff', 0.15) : alpha('#000', 0.12),
+            borderRadius: 5,
+            border: '2px solid transparent',
+            backgroundClip: 'content-box',
             '&:hover': {
-              bgcolor: isDarkMode ? alpha('#fff', 0.3) : alpha('#000', 0.25)
+              bgcolor: isDarkMode ? alpha('#fff', 0.25) : alpha('#000', 0.2)
             }
           }
         }}
       >
-        {/* 顶部添加单元格按钮 */}
-        <Box
-          sx={{
-            display: 'flex',
-            justifyContent: 'center',
-            gap: 1,
-            py: 1,
-            mb: 1,
-            opacity: 0.6,
-            transition: 'opacity 0.15s',
-            '&:hover': { opacity: 1 }
-          }}
-        >
-          <Button
-            size="small"
-            variant="text"
-            startIcon={<AddIcon sx={{ fontSize: 14 }} />}
-            onClick={() => handleInsertAbove(0, 'code')}
-            disabled={readOnly}
-            sx={{ 
-              fontSize: '12px',
-              textTransform: 'none',
-              color: 'text.secondary',
-              px: 1.5,
+        {/* 顶部添加按钮 */}
+        {!readOnly && (
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 0.5,
               py: 0.5,
-              borderRadius: '6px',
-              '&:hover': {
-                bgcolor: isDarkMode ? alpha('#fff', 0.08) : alpha('#000', 0.06),
-                color: 'primary.main'
-              }
+              px: 6,
+              opacity: 0.5,
+              transition: 'opacity 0.15s',
+              '&:hover': { opacity: 1 }
             }}
           >
-            {t('notebook.addCode')}
-          </Button>
-        </Box>
+            <Box sx={{ flex: 1, height: '1px', bgcolor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.08) }} />
+            <Button
+              size="small"
+              startIcon={<AddIcon sx={{ fontSize: '12px !important' }} />}
+              onClick={() => handleInsertAbove(0, 'code')}
+              sx={{
+                fontSize: '11px',
+                textTransform: 'none',
+                color: 'text.secondary',
+                px: 1,
+                py: 0.25,
+                minHeight: 22,
+                borderRadius: '4px',
+                '&:hover': {
+                  bgcolor: isDarkMode ? alpha('#fff', 0.08) : alpha('#000', 0.05),
+                  color: 'primary.main'
+                }
+              }}
+            >
+              Add Cell
+            </Button>
+            <Box sx={{ flex: 1, height: '1px', bgcolor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.08) }} />
+          </Box>
+        )}
 
+        {/* Cells */}
         {cells.map((cell, index) => (
           <NotebookCell
             key={cell.id || index}
@@ -1470,6 +1978,9 @@ export const NotebookEditor: React.FC<NotebookEditorProps> = ({
             isDarkMode={isDarkMode}
           />
         ))}
+
+        {/* 底部空白区域 */}
+        <Box sx={{ height: 100 }} />
       </Box>
     </Box>
   );

@@ -31,3 +31,7 @@ log:
   format: "console"  # console, json
   output: "stdout"  # stdout, file
   file_path: "/var/log/workspace/app.log"
+
+kernel:
+  python_path: ""  # Leave empty to auto-detect, or set to specific Python path
+  execution_timeout: 300  # seconds

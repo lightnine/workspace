@@ -18,6 +18,7 @@ type Config struct {
 	JWT      JWTConfig      `mapstructure:"jwt"`
 	Storage  StorageConfig  `mapstructure:"storage"`
 	Log      LogConfig      `mapstructure:"log"`
+	Kernel   KernelConfig   `mapstructure:"kernel"`
 }
 
 type ServerConfig struct {
@@ -55,6 +56,11 @@ type LogConfig struct {
 	Format   string `mapstructure:"format"`
 	Output   string `mapstructure:"output"`
 	FilePath string `mapstructure:"file_path"`
+}
+
+type KernelConfig struct {
+	PythonPath       string `mapstructure:"python_path"`
+	ExecutionTimeout int    `mapstructure:"execution_timeout"`
 }
 
 var (

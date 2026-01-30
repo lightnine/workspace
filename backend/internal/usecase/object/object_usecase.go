@@ -2,6 +2,7 @@ package object
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -23,6 +24,7 @@ type UseCase interface {
 	CreateFile(ctx context.Context, creatorID uuid.UUID, input *CreateFileInput) (*entity.ObjectResponse, error)
 	GetContent(ctx context.Context, objectID int64) ([]byte, error)
 	SaveContent(ctx context.Context, objectID int64, userID uuid.UUID, content []byte, message string) (*entity.ObjectResponse, error)
+	PatchNotebook(ctx context.Context, objectID int64, userID uuid.UUID, input *PatchNotebookInput) (*entity.ObjectResponse, error)
 
 	// Common operations
 	GetByID(ctx context.Context, id int64) (*entity.ObjectResponse, error)
@@ -58,10 +60,26 @@ type UpdateInput struct {
 	Description *string `json:"description"`
 }
 
+// CellOperation represents a single cell operation for notebook incremental update
+type CellOperation struct {
+	Op       string `json:"op"`       // Operation type: add, update, delete, move
+	CellID   string `json:"cell_id"`  // Cell ID for update/delete/move
+	Index    *int   `json:"index"`    // Target index for add/move
+	Cell     any    `json:"cell"`     // Cell data for add/update
+	OldIndex *int   `json:"old_index"` // Original index for move
+}
+
+// PatchNotebookInput represents notebook incremental update input
+type PatchNotebookInput struct {
+	Operations []CellOperation `json:"operations"`
+	Message    string          `json:"message"`
+}
+
 // MoveInput represents object move input
 type MoveInput struct {
-	TargetParentID *int64  `json:"target_parent_id"`
-	NewName        *string `json:"new_name"`
+	TargetParentID *int64    `json:"target_parent_id"`
+	NewName        *string   `json:"new_name"`
+	UserID         uuid.UUID `json:"-"` // Set by handler, not from JSON
 }
 
 // CopyInput represents object copy input
@@ -271,6 +289,191 @@ func (u *objectUseCase) SaveContent(ctx context.Context, objectID int64, userID 
 	return obj.ToResponse(), nil
 }
 
+// NotebookData represents the notebook JSON structure
+type NotebookData struct {
+	Cells         []map[string]any `json:"cells"`
+	Metadata      map[string]any   `json:"metadata,omitempty"`
+	NBFormat      int              `json:"nbformat,omitempty"`
+	NBFormatMinor int              `json:"nbformat_minor,omitempty"`
+}
+
+func (u *objectUseCase) PatchNotebook(ctx context.Context, objectID int64, userID uuid.UUID, input *PatchNotebookInput) (*entity.ObjectResponse, error) {
+	obj, err := u.objectRepo.GetByID(ctx, objectID)
+	if err != nil {
+		if apperrors.IsNotFound(err) {
+			return nil, apperrors.NotFoundError("object")
+		}
+		return nil, apperrors.InternalError("failed to get object", err)
+	}
+
+	if obj.IsDirectory() {
+		return nil, apperrors.ValidationError("cannot patch a directory")
+	}
+
+	// Only allow patching notebook files
+	if obj.Type != entity.ObjectTypeNotebook {
+		return nil, apperrors.ValidationError("only notebook files can be patched incrementally")
+	}
+
+	// Read current content
+	currentContent, err := u.storage.ReadFile(ctx, obj.Path)
+	if err != nil {
+		return nil, apperrors.InternalError("failed to read file", err)
+	}
+
+	// Parse current notebook
+	var notebook NotebookData
+	if err := json.Unmarshal(currentContent, &notebook); err != nil {
+		return nil, apperrors.ValidationError("invalid notebook format")
+	}
+
+	// Apply operations
+	for _, op := range input.Operations {
+		switch op.Op {
+		case "add":
+			if op.Index == nil || op.Cell == nil {
+				return nil, apperrors.ValidationError("add operation requires index and cell")
+			}
+			cellData, ok := op.Cell.(map[string]any)
+			if !ok {
+				return nil, apperrors.ValidationError("invalid cell data format")
+			}
+			idx := *op.Index
+			if idx < 0 || idx > len(notebook.Cells) {
+				idx = len(notebook.Cells)
+			}
+			// Insert at index
+			notebook.Cells = append(notebook.Cells[:idx], append([]map[string]any{cellData}, notebook.Cells[idx:]...)...)
+
+		case "update":
+			if op.CellID == "" || op.Cell == nil {
+				return nil, apperrors.ValidationError("update operation requires cell_id and cell")
+			}
+			cellData, ok := op.Cell.(map[string]any)
+			if !ok {
+				return nil, apperrors.ValidationError("invalid cell data format")
+			}
+			found := false
+			for i, cell := range notebook.Cells {
+				if cellID, ok := cell["id"].(string); ok && cellID == op.CellID {
+					notebook.Cells[i] = cellData
+					found = true
+					break
+				}
+			}
+			if !found {
+				return nil, apperrors.NotFoundError("cell not found: " + op.CellID)
+			}
+
+		case "delete":
+			if op.CellID == "" {
+				return nil, apperrors.ValidationError("delete operation requires cell_id")
+			}
+			found := false
+			for i, cell := range notebook.Cells {
+				if cellID, ok := cell["id"].(string); ok && cellID == op.CellID {
+					notebook.Cells = append(notebook.Cells[:i], notebook.Cells[i+1:]...)
+					found = true
+					break
+				}
+			}
+			if !found {
+				return nil, apperrors.NotFoundError("cell not found: " + op.CellID)
+			}
+
+		case "move":
+			if op.CellID == "" || op.Index == nil {
+				return nil, apperrors.ValidationError("move operation requires cell_id and index")
+			}
+			// Find and remove the cell
+			var movedCell map[string]any
+			fromIdx := -1
+			for i, cell := range notebook.Cells {
+				if cellID, ok := cell["id"].(string); ok && cellID == op.CellID {
+					movedCell = cell
+					fromIdx = i
+					break
+				}
+			}
+			if fromIdx == -1 {
+				return nil, apperrors.NotFoundError("cell not found: " + op.CellID)
+			}
+			// Remove from old position
+			notebook.Cells = append(notebook.Cells[:fromIdx], notebook.Cells[fromIdx+1:]...)
+			// Insert at new position
+			toIdx := *op.Index
+			if toIdx < 0 || toIdx > len(notebook.Cells) {
+				toIdx = len(notebook.Cells)
+			}
+			notebook.Cells = append(notebook.Cells[:toIdx], append([]map[string]any{movedCell}, notebook.Cells[toIdx:]...)...)
+
+		default:
+			return nil, apperrors.ValidationError("unknown operation: " + op.Op)
+		}
+	}
+
+	// Serialize back to JSON
+	newContent, err := json.MarshalIndent(notebook, "", "  ")
+	if err != nil {
+		return nil, apperrors.InternalError("failed to serialize notebook", err)
+	}
+
+	// Calculate hash
+	contentHash := u.storage.CalculateHash(newContent)
+
+	// Skip if content hasn't changed
+	if contentHash == obj.ContentHash {
+		return obj.ToResponse(), nil
+	}
+
+	// Write to storage
+	if err := u.storage.WriteFile(ctx, obj.Path, newContent); err != nil {
+		return nil, apperrors.InternalError("failed to write file", err)
+	}
+
+	// Get next version number
+	nextVersion, err := u.versionRepo.GetNextVersionNumber(ctx, objectID)
+	if err != nil {
+		return nil, apperrors.InternalError("failed to get next version", err)
+	}
+
+	// Save version snapshot
+	versionPath, err := u.storage.SaveVersion(ctx, obj.Path, nextVersion, newContent)
+	if err != nil {
+		return nil, apperrors.InternalError("failed to save version", err)
+	}
+
+	// Create version record
+	message := input.Message
+	if message == "" {
+		message = fmt.Sprintf("Patched %d cell(s)", len(input.Operations))
+	}
+	version := &entity.Version{
+		ObjectID:      objectID,
+		VersionNumber: nextVersion,
+		ContentHash:   contentHash,
+		Size:          int64(len(newContent)),
+		StoragePath:   versionPath,
+		Message:       message,
+		CreatorID:     userID,
+	}
+
+	if err := u.versionRepo.Create(ctx, version); err != nil {
+		return nil, apperrors.InternalError("failed to create version", err)
+	}
+
+	// Update object
+	obj.Size = int64(len(newContent))
+	obj.ContentHash = contentHash
+	obj.CurrentVersion = nextVersion
+
+	if err := u.objectRepo.Update(ctx, obj); err != nil {
+		return nil, apperrors.InternalError("failed to update object", err)
+	}
+
+	return obj.ToResponse(), nil
+}
+
 func (u *objectUseCase) GetByID(ctx context.Context, id int64) (*entity.ObjectResponse, error) {
 	obj, err := u.objectRepo.GetByID(ctx, id)
 	if err != nil {
@@ -328,12 +531,90 @@ func (u *objectUseCase) GetTree(ctx context.Context, userID uuid.UUID, depth int
 		return nil, apperrors.InternalError("failed to get tree", err)
 	}
 
-	responses := make([]entity.ObjectResponse, len(objects))
-	for i, obj := range objects {
-		responses[i] = *obj.ToResponse()
+	// 构建树形结构
+	return buildTree(objects), nil
+}
+
+// buildTree converts a flat list of objects into a tree structure
+func buildTree(objects []entity.Object) []entity.ObjectResponse {
+	// Create a map for quick lookup
+	responseMap := make(map[int64]*entity.ObjectResponse)
+
+	// First pass: create ObjectResponse for each object
+	for i := range objects {
+		obj := &objects[i]
+		resp := obj.ToResponse()
+		resp.Children = []*entity.ObjectResponse{} // Initialize empty children slice
+		responseMap[obj.ID] = resp
 	}
 
-	return responses, nil
+	// Second pass: build parent-child relationships
+	var roots []*entity.ObjectResponse
+	for i := range objects {
+		obj := &objects[i]
+		resp := responseMap[obj.ID]
+
+		if obj.ParentID == nil {
+			// No parent, this is a root node
+			roots = append(roots, resp)
+		} else {
+			// Has parent, add to parent's children
+			if parent, ok := responseMap[*obj.ParentID]; ok {
+				parent.Children = append(parent.Children, resp)
+			} else {
+				// Parent not found (might be deleted), treat as root
+				roots = append(roots, resp)
+			}
+		}
+	}
+
+	// Sort: directories first, then by name
+	sortChildren(roots)
+
+	// Convert to non-pointer slice and set empty children to nil for cleaner JSON
+	result := make([]entity.ObjectResponse, len(roots))
+	for i, root := range roots {
+		result[i] = *cleanupTree(root)
+	}
+
+	return result
+}
+
+// sortChildren recursively sorts children: directories first, then by name
+func sortChildren(items []*entity.ObjectResponse) {
+	// Sort current level
+	for i := 0; i < len(items)-1; i++ {
+		for j := i + 1; j < len(items); j++ {
+			// Directories first
+			if items[i].Type != entity.ObjectTypeDirectory && items[j].Type == entity.ObjectTypeDirectory {
+				items[i], items[j] = items[j], items[i]
+			} else if items[i].Type == items[j].Type || (items[i].Type != entity.ObjectTypeDirectory && items[j].Type != entity.ObjectTypeDirectory) {
+				// Same type or both are files: sort by name
+				if items[i].Name > items[j].Name {
+					items[i], items[j] = items[j], items[i]
+				}
+			}
+		}
+	}
+
+	// Recursively sort children
+	for _, item := range items {
+		if len(item.Children) > 0 {
+			sortChildren(item.Children)
+		}
+	}
+}
+
+// cleanupTree sets empty children slices to nil for cleaner JSON output
+func cleanupTree(item *entity.ObjectResponse) *entity.ObjectResponse {
+	if len(item.Children) == 0 {
+		item.Children = nil
+	} else {
+		for i, child := range item.Children {
+			item.Children[i] = cleanupTree(child)
+		}
+	}
+	return item
 }
 
 func (u *objectUseCase) Update(ctx context.Context, id int64, input *UpdateInput) (*entity.ObjectResponse, error) {
@@ -449,7 +730,9 @@ func (u *objectUseCase) Move(ctx context.Context, id int64, input *MoveInput) (*
 		}
 		newPath = parent.Path + "/" + newName
 	} else {
-		newPath = "/" + newName
+		// When moving to root, use user's directory
+		userDir := "/" + input.UserID.String()
+		newPath = userDir + "/" + newName
 	}
 
 	// Check if target exists
@@ -504,18 +787,17 @@ func (u *objectUseCase) Copy(ctx context.Context, id int64, creatorID uuid.UUID,
 		return nil, apperrors.InternalError("failed to get object", err)
 	}
 
-	if obj.IsDirectory() {
-		return nil, apperrors.ValidationError("cannot copy directories (not implemented)")
-	}
-
 	newName := obj.Name
 	if input.NewName != nil {
 		newName = *input.NewName
-	} else {
-		// Generate copy name
+	} else if !obj.IsDirectory() {
+		// Generate copy name for files
 		ext := filepath.Ext(obj.Name)
 		base := strings.TrimSuffix(obj.Name, ext)
 		newName = fmt.Sprintf("%s_copy%s", base, ext)
+	} else {
+		// Generate copy name for directories
+		newName = fmt.Sprintf("%s_copy", obj.Name)
 	}
 
 	// Build new path
@@ -535,7 +817,9 @@ func (u *objectUseCase) Copy(ctx context.Context, id int64, creatorID uuid.UUID,
 		newPath = parent.Path + "/" + newName
 		parentID = input.TargetParentID
 	} else {
-		newPath = "/" + newName
+		// When copying to root, use user's directory
+		userDir := "/" + creatorID.String()
+		newPath = userDir + "/" + newName
 		parentID = nil
 	}
 
@@ -548,7 +832,7 @@ func (u *objectUseCase) Copy(ctx context.Context, id int64, creatorID uuid.UUID,
 		return nil, apperrors.AlreadyExistsError("object at target path")
 	}
 
-	// Copy in storage
+	// Copy in storage (supports both files and directories)
 	if err := u.storage.Copy(ctx, obj.Path, newPath); err != nil {
 		return nil, apperrors.InternalError("failed to copy in storage", err)
 	}
@@ -589,6 +873,16 @@ func (u *objectUseCase) Copy(ctx context.Context, id int64, creatorID uuid.UUID,
 		return nil, apperrors.InternalError("failed to create permission", err)
 	}
 
+	// If directory, recursively create child objects in database
+	if obj.IsDirectory() {
+		if err := u.copyDirectoryChildren(ctx, obj, newObj, creatorID); err != nil {
+			// Cleanup on failure
+			_ = u.storage.Delete(ctx, newPath)
+			_ = u.objectRepo.Delete(ctx, newObj.ID)
+			return nil, apperrors.InternalError("failed to copy directory children", err)
+		}
+	}
+
 	// Get created object with relations
 	created, err := u.objectRepo.GetByID(ctx, newObj.ID)
 	if err != nil {
@@ -596,4 +890,61 @@ func (u *objectUseCase) Copy(ctx context.Context, id int64, creatorID uuid.UUID,
 	}
 
 	return created.ToResponse(), nil
+}
+
+// copyDirectoryChildren recursively copies child objects in the database
+func (u *objectUseCase) copyDirectoryChildren(ctx context.Context, srcDir, dstDir *entity.Object, creatorID uuid.UUID) error {
+	// Get children of source directory
+	children, _, err := u.objectRepo.ListChildren(ctx, &srcDir.ID, 1, 1000)
+	if err != nil {
+		return err
+	}
+
+	for _, child := range children {
+		childNewPath := dstDir.Path + "/" + child.Name
+
+		// Get inode for the copied file/directory
+		inode, err := u.storage.GetInode(ctx, childNewPath)
+		if err != nil {
+			return fmt.Errorf("failed to get inode for %s: %w", childNewPath, err)
+		}
+
+		// Create child object
+		newChild := &entity.Object{
+			ID:             inode,
+			Name:           child.Name,
+			Type:           child.Type,
+			Path:           childNewPath,
+			ParentID:       &dstDir.ID,
+			CreatorID:      creatorID,
+			Size:           child.Size,
+			ContentHash:    child.ContentHash,
+			Description:    child.Description,
+			CurrentVersion: 1,
+		}
+
+		if err := u.objectRepo.Create(ctx, newChild); err != nil {
+			return fmt.Errorf("failed to create child object %s: %w", child.Name, err)
+		}
+
+		// Create permission for child
+		perm := &entity.Permission{
+			ObjectID:  newChild.ID,
+			UserID:    creatorID,
+			Role:      entity.RoleOwner,
+			GrantedBy: creatorID,
+		}
+		if err := u.permissionRepo.Create(ctx, perm); err != nil {
+			return fmt.Errorf("failed to create permission for %s: %w", child.Name, err)
+		}
+
+		// Recursively copy children if it's a directory
+		if child.IsDirectory() {
+			if err := u.copyDirectoryChildren(ctx, &child, newChild, creatorID); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
