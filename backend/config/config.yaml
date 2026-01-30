@@ -1,0 +1,33 @@
+# Workspace Backend Configuration
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+  mode: "debug"  # debug, release, test
+
+database:
+  host: "localhost"
+  port: 5432
+  user: "postgres"
+  password: "leondli123"
+  dbname: "workspace"
+  sslmode: "disable"
+  max_idle_conns: 10
+  max_open_conns: 100
+  conn_max_lifetime: 3600  # seconds
+
+jwt:
+  secret: "your-secret-key-change-in-production"
+  access_token_expiry: 3600      # 1 hour in seconds
+  refresh_token_expiry: 604800   # 7 days in seconds
+  issuer: "workspace"
+
+storage:
+  base_path: "/Users/leondli/mnt/workspace"  # JuiceFS mount point
+  version_path: "/Users/leondli/mnt/workspace/.versions"  # Version snapshots storage
+
+log:
+  level: "debug"  # debug, info, warn, error
+  format: "console"  # console, json
+  output: "stdout"  # stdout, file
+  file_path: "/var/log/workspace/app.log"

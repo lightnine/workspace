@@ -1,0 +1,137 @@
+{
+  "common": {
+    "workspace": "Workspace",
+    "search": "搜索",
+    "cancel": "取消",
+    "confirm": "确定",
+    "save": "保存",
+    "delete": "删除",
+    "rename": "重命名",
+    "close": "关闭",
+    "settings": "设置",
+    "logout": "登出",
+    "loading": "加载中...",
+    "noData": "暂无数据",
+    "newFile": "新建文件",
+    "newFolder": "新建文件夹",
+    "uploadFile": "上传文件",
+    "newName": "新名称",
+    "name": "名称"
+  },
+  "sidebar": {
+    "navigation": "导航",
+    "workspace": "Workspace",
+    "recents": "最近访问",
+    "search": "搜索",
+    "compute": "Compute",
+    "jobs": "Jobs",
+    "pipelines": "Pipelines",
+    "sql": "SQL",
+    "dashboards": "Dashboards",
+    "experiments": "Experiments"
+  },
+  "dashboard": {
+    "welcome": "欢迎使用 Workspace",
+    "subtitle": "快速访问您最近使用的文件和常用任务",
+    "quickStart": "快速开始",
+    "newNotebook": "新建 Notebook",
+    "recentAccess": "最近访问",
+    "items": "个项目",
+    "commonActions": "常用操作",
+    "createNotebook": "创建新的代码笔记本",
+    "organizeFiles": "组织您的文件",
+    "importFromLocal": "从本地导入文件"
+  },
+  "workspace": {
+    "fileExplorer": "文件浏览器",
+    "selectFile": "请选择一个文件进行编辑",
+    "newNotebook": "新建 Notebook",
+    "newPython": "新建 Python 脚本",
+    "newSql": "新建 SQL 查询",
+    "newMarkdown": "新建 Markdown",
+    "fileWillBe": "文件将创建为: {{name}}"
+  },
+  "recents": {
+    "title": "最近访问",
+    "items": "个项目",
+    "noRecents": "暂无最近访问的文件",
+    "noRecentsDesc": "您最近访问的文件将显示在这里"
+  },
+  "search": {
+    "title": "搜索 Workspace",
+    "placeholder": "搜索 Workspace...",
+    "subtitle": "快速查找文件、文件夹和 Notebook",
+    "hint": "提示：使用快捷键 Ctrl+K / Cmd+K 快速打开搜索",
+    "searching": "搜索中...",
+    "noResults": "没有找到结果"
+  },
+  "explorer": {
+    "newFile": "新建文件",
+    "newFolder": "新建文件夹",
+    "rename": "重命名",
+    "delete": "删除",
+    "confirmDelete": "确定要删除吗？",
+    "unsavedWarning": "文件 {{fileName}} 有未保存的更改，确定要关闭吗？"
+  },
+  "editor": {
+    "unsavedChanges": "未保存的更改"
+  },
+  "notebook": {
+    "empty": "Notebook 为空",
+    "invalid": "Notebook 格式无效",
+    "emptyCell": "空单元",
+    "codeCell": "代码单元",
+    "markdownCell": "Markdown 单元",
+    "rawCell": "原始单元",
+    "unknownCell": "未知单元",
+    "output": "输出",
+    "executed": "已执行",
+    "duplicate": "复制",
+    "delete": "删除",
+    "addCellHint": "添加单元"
+  },
+  "userMenu": {
+    "settings": "设置",
+    "logout": "登出"
+  },
+  "settings": {
+    "title": "设置",
+    "language": "语言",
+    "languageDesc": "选择界面显示语言",
+    "theme": "主题",
+    "themeDesc": "选择应用主题",
+    "light": "浅色",
+    "dark": "暗色",
+    "chinese": "中文",
+    "english": "English"
+  },
+  "error": {
+    "somethingWentWrong": "出现了一些问题",
+    "retry": "重试",
+    "unauthorized": "未授权，请重新登录",
+    "forbidden": "没有权限访问该资源",
+    "notFound": "资源不存在",
+    "serverError": "服务器内部错误",
+    "networkError": "网络错误，请检查网络连接",
+    "requestError": "请求配置错误"
+  },
+  "pages": {
+    "compute": "Compute 页面（待实现）",
+    "jobs": "Jobs 页面（待实现）",
+    "pipelines": "Pipelines 页面（待实现）",
+    "sql": "SQL 页面（待实现）",
+    "dashboards": "Dashboards 页面（待实现）",
+    "experiments": "Experiments 页面（待实现）"
+  },
+  "auth": {
+    "login": "登录",
+    "register": "注册",
+    "email": "邮箱",
+    "password": "密码",
+    "username": "用户名",
+    "displayName": "显示名称",
+    "passwordHint": "密码至少8个字符",
+    "loginFailed": "登录失败，请检查邮箱和密码",
+    "registerFailed": "注册失败，请稍后重试"
+  }
+}

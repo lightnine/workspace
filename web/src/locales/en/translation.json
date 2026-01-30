@@ -1,0 +1,137 @@
+{
+  "common": {
+    "workspace": "Workspace",
+    "search": "Search",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "save": "Save",
+    "delete": "Delete",
+    "rename": "Rename",
+    "close": "Close",
+    "settings": "Settings",
+    "logout": "Logout",
+    "loading": "Loading...",
+    "noData": "No data",
+    "newFile": "New File",
+    "newFolder": "New Folder",
+    "uploadFile": "Upload File",
+    "newName": "New Name",
+    "name": "Name"
+  },
+  "sidebar": {
+    "navigation": "Navigation",
+    "workspace": "Workspace",
+    "recents": "Recents",
+    "search": "Search",
+    "compute": "Compute",
+    "jobs": "Jobs",
+    "pipelines": "Pipelines",
+    "sql": "SQL",
+    "dashboards": "Dashboards",
+    "experiments": "Experiments"
+  },
+  "dashboard": {
+    "welcome": "Welcome to Workspace",
+    "subtitle": "Quick access to your recently used files and common tasks",
+    "quickStart": "Quick Start",
+    "newNotebook": "New Notebook",
+    "recentAccess": "Recent Access",
+    "items": " items",
+    "commonActions": "Common Actions",
+    "createNotebook": "Create a new code notebook",
+    "organizeFiles": "Organize your files",
+    "importFromLocal": "Import files from local"
+  },
+  "workspace": {
+    "fileExplorer": "File Explorer",
+    "selectFile": "Please select a file to edit",
+    "newNotebook": "New Notebook",
+    "newPython": "New Python Script",
+    "newSql": "New SQL Query",
+    "newMarkdown": "New Markdown",
+    "fileWillBe": "File will be created as: {{name}}"
+  },
+  "recents": {
+    "title": "Recent Access",
+    "items": " items",
+    "noRecents": "No recently accessed files",
+    "noRecentsDesc": "Your recently accessed files will appear here"
+  },
+  "search": {
+    "title": "Search Workspace",
+    "placeholder": "Search Workspace...",
+    "subtitle": "Quickly find files, folders and Notebooks",
+    "hint": "Tip: Use Ctrl+K / Cmd+K to quickly open search",
+    "searching": "Searching...",
+    "noResults": "No results found"
+  },
+  "explorer": {
+    "newFile": "New File",
+    "newFolder": "New Folder",
+    "rename": "Rename",
+    "delete": "Delete",
+    "confirmDelete": "Are you sure you want to delete?",
+    "unsavedWarning": "File {{fileName}} has unsaved changes. Are you sure you want to close?"
+  },
+  "editor": {
+    "unsavedChanges": "Unsaved changes"
+  },
+  "notebook": {
+    "empty": "Notebook is empty",
+    "invalid": "Invalid notebook format",
+    "emptyCell": "Empty cell",
+    "codeCell": "Code cell",
+    "markdownCell": "Markdown cell",
+    "rawCell": "Raw cell",
+    "unknownCell": "Unknown cell",
+    "output": "Output",
+    "executed": "Executed",
+    "duplicate": "Duplicate",
+    "delete": "Delete",
+    "addCellHint": "Add a cell"
+  },
+  "userMenu": {
+    "settings": "Settings",
+    "logout": "Logout"
+  },
+  "settings": {
+    "title": "Settings",
+    "language": "Language",
+    "languageDesc": "Select interface display language",
+    "theme": "Theme",
+    "themeDesc": "Select application theme",
+    "light": "Light",
+    "dark": "Dark",
+    "chinese": "中文",
+    "english": "English"
+  },
+  "error": {
+    "somethingWentWrong": "Something went wrong",
+    "retry": "Retry",
+    "unauthorized": "Unauthorized, please login again",
+    "forbidden": "No permission to access this resource",
+    "notFound": "Resource not found",
+    "serverError": "Internal server error",
+    "networkError": "Network error, please check your connection",
+    "requestError": "Request configuration error"
+  },
+  "pages": {
+    "compute": "Compute Page (To be implemented)",
+    "jobs": "Jobs Page (To be implemented)",
+    "pipelines": "Pipelines Page (To be implemented)",
+    "sql": "SQL Page (To be implemented)",
+    "dashboards": "Dashboards Page (To be implemented)",
+    "experiments": "Experiments Page (To be implemented)"
+  },
+  "auth": {
+    "login": "Login",
+    "register": "Register",
+    "email": "Email",
+    "password": "Password",
+    "username": "Username",
+    "displayName": "Display Name",
+    "passwordHint": "Password must be at least 8 characters",
+    "loginFailed": "Login failed, please check your email and password",
+    "registerFailed": "Registration failed, please try again later"
+  }
+}

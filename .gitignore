@@ -1,0 +1,97 @@
+# ========================
+# Go 编译与构建产物
+# ========================
+# 生成的可执行文件
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go test 生成的测试二进制
+*.test
+
+# Go 输出文件
+*.out
+
+# Go Modules
+vendor/
+go.work
+go.sum
+
+# 编译输出目录
+bin/
+dist/
+
+# 临时文件
+*.log
+tmp/
+*.tmp
+
+# ========================
+# Node/React 相关
+# ========================
+# Node modules
+web/node_modules/
+
+# React/Vite/Cra 构建输出
+/build/
+/dist/
+/.eslintcache
+/.cache
+
+# 打包 / 静态文件夹
+/public/build/
+
+# ========================
+# 环境 & 秘密文件
+# ========================
+# React 环境变量（敏感配置）
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Go 环境或配置
+.env.*
+
+# ========================
+# IDE / 编辑器
+# ========================
+# VSCode
+.vscode/
+.history/
+
+# Goland / IntelliJ
+.idea/
+*.iml
+
+# macOS 系统文件
+.DS_Store
+
+# Windows 系统文件
+Thumbs.db
+
+# ========================
+# Logs
+# ========================
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ========================
+# 临时 & 缓存
+# ========================
+*.swp
+*.swo
+*.tmp
+
+# ========================
+# React Testing
+# ========================
+coverage/
+*.lcov
+

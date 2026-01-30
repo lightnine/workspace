@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: workspace-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: workspace
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  workspace-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: workspace-backend
+    ports:
+      - "8080:8080"
+    environment:
+      - CONFIG_PATH=/app/config/config.yaml
+    volumes:
+      - ./config:/app/config:ro
+      - workspace_data:/data/workspace
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  workspace_data:
