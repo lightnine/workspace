@@ -3,13 +3,37 @@ import {
   Box,
   Tabs,
   Tab,
-  IconButton
+  IconButton,
+  alpha
 } from '@mui/material';
 import { Close as CloseIcon } from '@mui/icons-material';
 import { useEditor } from '../../context/EditorContext';
+import { useApp } from '../../context/AppContext';
+
+// 文件图标颜色映射
+const getFileIconColor = (fileName: string, isDarkMode: boolean) => {
+  const ext = fileName.split('.').pop()?.toLowerCase();
+  const colors: Record<string, string> = {
+    'py': '#3776AB',
+    'ipynb': '#F37626',
+    'js': '#F7DF1E',
+    'ts': '#3178C6',
+    'tsx': '#3178C6',
+    'jsx': '#61DAFB',
+    'json': '#5B5B5B',
+    'md': '#083FA1',
+    'sql': '#E38C00',
+    'html': '#E34F26',
+    'css': '#1572B6',
+    'scss': '#CC6699'
+  };
+  return colors[ext || ''] || (isDarkMode ? '#A1A1AA' : '#71717A');
+};
 
 export const TabView: React.FC = () => {
   const { tabs, activeTabId, setActiveTabId, closeTab } = useEditor();
+  const { theme: themeMode } = useApp();
+  const isDarkMode = themeMode === 'dark';
 
   const handleTabChange = (_event: React.SyntheticEvent, newValue: string) => {
     setActiveTabId(newValue);
@@ -27,9 +51,9 @@ export const TabView: React.FC = () => {
   return (
     <Box
       sx={{
-        borderBottom: 1,
+        borderBottom: '1px solid',
         borderColor: 'divider',
-        bgcolor: 'background.paper',
+        bgcolor: isDarkMode ? alpha('#fff', 0.02) : 'background.paper',
         position: 'relative'
       }}
     >
@@ -40,21 +64,36 @@ export const TabView: React.FC = () => {
         scrollButtons="auto"
         sx={{
           minHeight: 40,
+          '& .MuiTabs-indicator': {
+            height: 2,
+            borderRadius: '2px 2px 0 0',
+            bgcolor: 'primary.main'
+          },
+          '& .MuiTabs-scrollButtons': {
+            width: 28,
+            '&.Mui-disabled': {
+              opacity: 0.3
+            }
+          },
           '& .MuiTab-root': {
             minHeight: 40,
             textTransform: 'none',
-            fontSize: '0.875rem',
+            fontSize: '0.8125rem',
             fontWeight: 500,
-            px: 2,
+            px: 1.5,
             py: 1,
+            color: 'text.secondary',
+            borderRight: '1px solid',
+            borderColor: 'divider',
+            transition: 'all 0.15s ease',
             '&.Mui-selected': {
-              color: 'primary.main',
-              fontWeight: 600
+              color: 'text.primary',
+              bgcolor: isDarkMode ? alpha('#fff', 0.03) : alpha('#000', 0.02)
+            },
+            '&:hover': {
+              bgcolor: isDarkMode ? alpha('#fff', 0.05) : alpha('#000', 0.04),
+              color: 'text.primary'
             }
-          },
-          '& .MuiTabs-indicator': {
-            height: 2,
-            borderRadius: '2px 2px 0 0'
           }
         }}
       >
@@ -71,7 +110,24 @@ export const TabView: React.FC = () => {
                   position: 'relative'
                 }}
               >
-                <span>{tab.fileName}</span>
+                {/* 文件类型指示点 */}
+                <Box
+                  sx={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: '2px',
+                    bgcolor: getFileIconColor(tab.fileName, isDarkMode),
+                    flexShrink: 0
+                  }}
+                />
+                <span style={{ 
+                  maxWidth: 120, 
+                  overflow: 'hidden', 
+                  textOverflow: 'ellipsis', 
+                  whiteSpace: 'nowrap' 
+                }}>
+                  {tab.fileName}
+                </span>
                 {tab.isDirty && (
                   <Box
                     sx={{
@@ -88,15 +144,18 @@ export const TabView: React.FC = () => {
                   onClick={(e) => handleCloseTab(e, tab.id)}
                   sx={{
                     ml: 0.5,
-                    p: 0.5,
-                    opacity: 0.6,
+                    p: 0.25,
+                    width: 18,
+                    height: 18,
+                    opacity: 0.5,
+                    borderRadius: '4px',
                     '&:hover': {
                       opacity: 1,
-                      bgcolor: 'action.hover'
+                      bgcolor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.08)
                     }
                   }}
                 >
-                  <CloseIcon fontSize="small" />
+                  <CloseIcon sx={{ fontSize: 14 }} />
                 </IconButton>
               </Box>
             }

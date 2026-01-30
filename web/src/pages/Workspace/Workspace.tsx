@@ -111,11 +111,11 @@ export const Workspace: React.FC = () => {
       <Paper
         elevation={0}
         sx={{
-          width: { xs: 0, sm: 300 },
-          minWidth: { xs: 0, sm: 300 },
+          width: { xs: 0, sm: 280 },
+          minWidth: { xs: 0, sm: 280 },
           display: { xs: 'none', sm: 'flex' },
           flexDirection: 'column',
-          borderRight: 1,
+          borderRight: '1px solid',
           borderColor: 'divider',
           bgcolor: 'background.paper'
         }}
@@ -124,34 +124,43 @@ export const Workspace: React.FC = () => {
           sx={{
             px: 2,
             py: 1.5,
-            borderBottom: 1,
+            borderBottom: '1px solid',
             borderColor: 'divider',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'space-between'
+            justifyContent: 'space-between',
+            minHeight: 48
           }}
         >
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <FolderIcon sx={{ color: 'primary.main' }} />
-            <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+            <FolderIcon sx={{ color: '#F59E0B', fontSize: 20 }} />
+            <Typography 
+              variant="subtitle2" 
+              sx={{ 
+                fontWeight: 600,
+                fontSize: '0.8125rem',
+                color: 'text.primary'
+              }}
+            >
               {t('workspace.fileExplorer')}
             </Typography>
           </Box>
-          <Tooltip title={t('common.newFile')}>
+          <Tooltip title={t('common.newFile')} arrow>
             <IconButton
               size="small"
               onClick={handleMenuOpen}
               sx={{
+                width: 28,
+                height: 28,
+                borderRadius: '6px',
                 bgcolor: 'primary.main',
                 color: 'white',
                 '&:hover': {
                   bgcolor: 'primary.dark'
-                },
-                width: 28,
-                height: 28
+                }
               }}
             >
-              <AddIcon fontSize="small" />
+              <AddIcon sx={{ fontSize: 18 }} />
             </IconButton>
           </Tooltip>
         </Box>
@@ -161,7 +170,16 @@ export const Workspace: React.FC = () => {
       </Paper>
 
       {/* 右侧编辑器区域 */}
-      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, bgcolor: 'background.default' }}>
+      <Box 
+        sx={{ 
+          flex: 1, 
+          display: 'flex', 
+          flexDirection: 'column', 
+          overflow: 'hidden', 
+          minWidth: 0, 
+          bgcolor: 'background.default' 
+        }}
+      >
         <TabView />
         <Box sx={{ flex: 1, overflow: 'hidden', minHeight: 0 }}>
           <MonacoEditor height="100%" />
@@ -181,43 +199,51 @@ export const Workspace: React.FC = () => {
           vertical: 'top',
           horizontal: 'right'
         }}
+        PaperProps={{
+          sx: {
+            minWidth: 200,
+            borderRadius: '10px',
+            boxShadow: '0 8px 30px rgba(0,0,0,0.15)',
+            mt: 0.5
+          }
+        }}
       >
         <MenuItem onClick={() => handleCreateClick('notebook')}>
           <ListItemIcon>
-            <CreateFileIcon fontSize="small" color="warning" />
+            <CreateFileIcon fontSize="small" sx={{ color: '#F37626' }} />
           </ListItemIcon>
-          {t('workspace.newNotebook')}
+          <Typography fontSize="0.875rem">{t('workspace.newNotebook')}</Typography>
         </MenuItem>
         <MenuItem onClick={() => handleCreateClick('python')}>
           <ListItemIcon>
-            <CodeIcon fontSize="small" color="primary" />
+            <CodeIcon fontSize="small" sx={{ color: '#3776AB' }} />
           </ListItemIcon>
-          {t('workspace.newPython')}
+          <Typography fontSize="0.875rem">{t('workspace.newPython')}</Typography>
         </MenuItem>
         <MenuItem onClick={() => handleCreateClick('sql')}>
           <ListItemIcon>
-            <SqlIcon fontSize="small" color="secondary" />
+            <SqlIcon fontSize="small" sx={{ color: '#E38C00' }} />
           </ListItemIcon>
-          {t('workspace.newSql')}
+          <Typography fontSize="0.875rem">{t('workspace.newSql')}</Typography>
         </MenuItem>
         <MenuItem onClick={() => handleCreateClick('markdown')}>
           <ListItemIcon>
-            <MarkdownIcon fontSize="small" color="info" />
+            <MarkdownIcon fontSize="small" sx={{ color: '#083FA1' }} />
           </ListItemIcon>
-          {t('workspace.newMarkdown')}
+          <Typography fontSize="0.875rem">{t('workspace.newMarkdown')}</Typography>
         </MenuItem>
-        <Divider />
+        <Divider sx={{ my: 0.5 }} />
         <MenuItem onClick={() => handleCreateClick('file')}>
           <ListItemIcon>
-            <FileIcon fontSize="small" />
+            <FileIcon fontSize="small" color="action" />
           </ListItemIcon>
-          {t('common.newFile')}
+          <Typography fontSize="0.875rem">{t('common.newFile')}</Typography>
         </MenuItem>
         <MenuItem onClick={() => handleCreateClick('directory')}>
           <ListItemIcon>
-            <CreateFolderIcon fontSize="small" />
+            <CreateFolderIcon fontSize="small" sx={{ color: '#F59E0B' }} />
           </ListItemIcon>
-          {t('common.newFolder')}
+          <Typography fontSize="0.875rem">{t('common.newFolder')}</Typography>
         </MenuItem>
       </Menu>
 
@@ -227,8 +253,13 @@ export const Workspace: React.FC = () => {
         onClose={handleCloseDialog}
         maxWidth="xs"
         fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: '12px'
+          }
+        }}
       >
-        <DialogTitle>
+        <DialogTitle sx={{ pb: 1 }}>
           {getDialogTitle()}
         </DialogTitle>
         <DialogContent>
@@ -239,6 +270,7 @@ export const Workspace: React.FC = () => {
             placeholder={getFileNamePlaceholder()}
             fullWidth
             variant="outlined"
+            size="small"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => {
@@ -252,14 +284,18 @@ export const Workspace: React.FC = () => {
             }
           />
         </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseDialog}>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button 
+            onClick={handleCloseDialog}
+            sx={{ borderRadius: '8px' }}
+          >
             {t('common.cancel')}
           </Button>
           <Button
             onClick={handleCreate}
             variant="contained"
             disabled={!newName.trim()}
+            sx={{ borderRadius: '8px' }}
           >
             {t('common.confirm')}
           </Button>

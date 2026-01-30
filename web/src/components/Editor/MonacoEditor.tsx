@@ -4,7 +4,7 @@ import Editor from '@monaco-editor/react';
 import { Box, useTheme } from '@mui/material';
 import { useEditor } from '../../context/EditorContext';
 import { useApp } from '../../context/AppContext';
-import { NotebookViewer } from './NotebookViewer';
+import { NotebookEditor } from './NotebookEditor';
 
 interface MonacoEditorProps {
   height?: string;
@@ -128,7 +128,15 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({ height = '100%' }) =
   return (
     <Box sx={{ height, width: '100%', bgcolor: 'background.paper' }}>
       {isNotebook ? (
-        <NotebookViewer content={activeTab.content} height={height} />
+        <NotebookEditor 
+          content={activeTab.content} 
+          height={height} 
+          onChange={(newContent) => {
+            if (activeTabId) {
+              updateTabContent(activeTabId, newContent);
+            }
+          }}
+        />
       ) : (
         <Editor
           height={height}

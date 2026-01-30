@@ -9,9 +9,10 @@ import {
   ListItemIcon,
   ListItemText,
   Toolbar,
-  Divider,
   Box,
-  Typography
+  Typography,
+  alpha,
+  useTheme
 } from '@mui/material';
 import {
   Folder as FolderIcon,
@@ -25,8 +26,9 @@ import {
   Science as ExperimentsIcon
 } from '@mui/icons-material';
 import { NavModule } from '../../types';
+import { useApp } from '../../context/AppContext';
 
-const drawerWidth = 240;
+const drawerWidth = 220;
 
 interface NavItem {
   id: NavModule;
@@ -39,6 +41,9 @@ export const Sidebar: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
+  const theme = useTheme();
+  const { theme: themeMode } = useApp();
+  const isDarkMode = themeMode === 'dark';
 
   const navItems: NavItem[] = [
     { id: 'workspace', labelKey: 'sidebar.workspace', icon: <FolderIcon />, path: '/workspace' },
@@ -65,7 +70,10 @@ export const Sidebar: React.FC = () => {
         display: { xs: 'none', sm: 'block' },
         '& .MuiDrawer-paper': {
           width: drawerWidth,
-          boxSizing: 'border-box'
+          boxSizing: 'border-box',
+          bgcolor: 'background.paper',
+          borderRight: '1px solid',
+          borderColor: 'divider'
         }
       }}
     >
@@ -76,40 +84,71 @@ export const Sidebar: React.FC = () => {
           sx={{
             textTransform: 'uppercase',
             fontWeight: 600,
-            fontSize: '0.7rem',
+            fontSize: '0.65rem',
             color: 'text.secondary',
-            letterSpacing: '0.05em'
+            letterSpacing: '0.08em'
           }}
         >
           {t('sidebar.navigation')}
         </Typography>
       </Box>
-      <Divider />
-      <List sx={{ px: 1, py: 1 }}>
-        {navItems.map((item) => (
-          <ListItem key={item.id} disablePadding>
-            <ListItemButton
-              selected={location.pathname === item.path}
-              onClick={() => handleNavClick(item.path)}
-              sx={{
-                '& .MuiListItemIcon-root': {
-                  minWidth: 40
-                }
-              }}
-            >
-              <ListItemIcon sx={{ color: location.pathname === item.path ? 'inherit' : 'text.secondary' }}>
-                {item.icon}
-              </ListItemIcon>
-              <ListItemText 
-                primary={t(item.labelKey)}
-                primaryTypographyProps={{
-                  fontSize: '0.9rem',
-                  fontWeight: location.pathname === item.path ? 600 : 400
+      <List sx={{ px: 1, py: 0.5 }}>
+        {navItems.map((item) => {
+          const isSelected = location.pathname === item.path;
+          return (
+            <ListItem key={item.id} disablePadding sx={{ mb: 0.25 }}>
+              <ListItemButton
+                selected={isSelected}
+                onClick={() => handleNavClick(item.path)}
+                sx={{
+                  py: 1,
+                  px: 1.5,
+                  borderRadius: '8px',
+                  transition: 'all 0.15s ease',
+                  '& .MuiListItemIcon-root': {
+                    minWidth: 36,
+                    color: isSelected 
+                      ? 'primary.main' 
+                      : (isDarkMode ? alpha('#fff', 0.6) : alpha('#000', 0.5))
+                  },
+                  '&.Mui-selected': {
+                    bgcolor: isDarkMode 
+                      ? alpha(theme.palette.primary.main, 0.15)
+                      : alpha(theme.palette.primary.main, 0.1),
+                    '&:hover': {
+                      bgcolor: isDarkMode 
+                        ? alpha(theme.palette.primary.main, 0.2)
+                        : alpha(theme.palette.primary.main, 0.15)
+                    }
+                  },
+                  '&:hover': {
+                    bgcolor: isDarkMode 
+                      ? alpha('#fff', 0.05)
+                      : alpha('#000', 0.04)
+                  }
                 }}
-              />
-            </ListItemButton>
-          </ListItem>
-        ))}
+              >
+                <ListItemIcon 
+                  sx={{ 
+                    '& .MuiSvgIcon-root': { 
+                      fontSize: 20 
+                    }
+                  }}
+                >
+                  {item.icon}
+                </ListItemIcon>
+                <ListItemText 
+                  primary={t(item.labelKey)}
+                  primaryTypographyProps={{
+                    fontSize: '0.875rem',
+                    fontWeight: isSelected ? 600 : 500,
+                    color: isSelected ? 'primary.main' : 'text.primary'
+                  }}
+                />
+              </ListItemButton>
+            </ListItem>
+          );
+        })}
       </List>
     </Drawer>
   );

@@ -1,8 +1,8 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { UserResponse } from '../types';
+import { UserResponse, LoginInput } from '../types';
 import { setAccessToken, setRefreshToken, clearTokens, getAccessToken } from '../services/api';
-import { login as loginApi, LoginInput, getCurrentUser } from '../services/auth';
+import { login as loginApi, getCurrentUser } from '../services/auth';
 
 type Language = 'zh' | 'en';
 

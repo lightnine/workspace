@@ -372,16 +372,16 @@ export const getRecents = async (): Promise<RecentItem[]> => {
   });
 };
 
-export const addRecent = (item: Omit<RecentItem, 'id' | 'lastAccessed'>): void => {
+export const addRecent = async (item: Omit<RecentItem, 'id' | 'lastAccessed'>): Promise<void> => {
   try {
-    const recents = getRecents();
+    const recents = await getRecents();
     const newItem: RecentItem = {
       ...item,
       id: `recent-${Date.now()}`,
       lastAccessed: new Date().toISOString()
     };
     // 移除重复项
-    const filtered = recents.filter(r => r.fileId !== item.fileId);
+    const filtered = recents.filter((r: RecentItem) => r.fileId !== item.fileId);
     // 添加到开头
     const updated = [newItem, ...filtered].slice(0, 50); // 最多保存50条
     localStorage.setItem(RECENTS_KEY, JSON.stringify(updated));

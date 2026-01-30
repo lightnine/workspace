@@ -5,12 +5,10 @@ import { Search as SearchIcon } from '@mui/icons-material';
 import { SearchBar } from '../../components/SearchBar/SearchBar';
 import { SearchSuggestion } from '../../types';
 import { useEditor } from '../../context/EditorContext';
-import { useWorkspace } from '../../context/WorkspaceContext';
 
 export const Search: React.FC = () => {
   const { t } = useTranslation();
   const { openFile } = useEditor();
-  const { fileTree } = useWorkspace();
 
   const handleSelectResult = async (suggestion: SearchSuggestion) => {
     try {
