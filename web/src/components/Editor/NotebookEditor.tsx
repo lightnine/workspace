@@ -35,6 +35,7 @@ import {
   Trash2,
   Copy,
   ChevronUp,
+  ChevronDown,
   MoreVertical,
   Code,
   Type,
@@ -61,6 +62,7 @@ import {
   Hash,
   Maximize2,
   GripVertical,
+  Minus,
 } from 'lucide-react';
 import { CellOperation } from '../../services/api';
 
@@ -341,13 +343,6 @@ interface CellProps {
   totalCells: number;
   isDarkMode: boolean;
 }
-
-// Databricks-style ChevronDown icon component
-const ChevronDown: React.FC<{ className?: string }> = ({ className }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-    <path d="m6 9 6 6 6-6"/>
-  </svg>
-);
 
 // Sparkle icon for AI Assistant
 const Sparkles: React.FC<{ className?: string }> = ({ className }) => (
@@ -978,8 +973,10 @@ export const NotebookEditor: React.FC<NotebookEditorProps> = ({
   const [tabsOn, setTabsOn] = useState(true);
   const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
   const [rightSidebarTab, setRightSidebarTab] = useState<'info' | 'comments' | 'history' | 'variables'>('info');
+  const [cellNavExpanded, setCellNavExpanded] = useState(false);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const cellRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   
   // Derive kernel status for UI
   const kernelStatus = useMemo((): 'disconnected' | 'connecting' | 'idle' | 'busy' => {
@@ -1038,6 +1035,33 @@ export const NotebookEditor: React.FC<NotebookEditorProps> = ({
   }, [notebook?.cells]);
 
   const language = notebook?.metadata?.kernelspec?.language || notebook?.metadata?.language_info?.name || 'python';
+
+  // Find last run cell (cell with execution_count)
+  const lastRunCellIndex = useMemo(() => {
+    let lastIndex = -1;
+    let lastExecCount = -1;
+    cells.forEach((cell, index) => {
+      if (cell.execution_count && cell.execution_count > lastExecCount) {
+        lastExecCount = cell.execution_count;
+        lastIndex = index;
+      }
+    });
+    return lastIndex;
+  }, [cells]);
+
+  // Find first failed cell
+  const firstFailedCellIndex = useMemo(() => {
+    return cells.findIndex(cell => hasErrorOutput(cell.outputs));
+  }, [cells]);
+
+  // Scroll to cell
+  const scrollToCell = useCallback((index: number) => {
+    const cellElement = cellRefs.current.get(index);
+    if (cellElement) {
+      cellElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setActiveCellIndex(index);
+    }
+  }, []);
 
   const addPendingOperation = useCallback((op: CellOperation) => {
     const lastOp = pendingOperationsRef.current[pendingOperationsRef.current.length - 1];
@@ -1880,34 +1904,44 @@ export const NotebookEditor: React.FC<NotebookEditorProps> = ({
         <div className="flex-1 overflow-auto py-3 custom-scrollbar">
           {/* Cells */}
           {cells.map((cell, index) => (
-            <NotebookCellComponent
+            <div 
               key={cell.id || index}
-              cell={cell}
-              index={index}
-              cellNumber={index + 1}
-              isActive={index === activeCellIndex}
-              isRunning={runningCells.has(index)}
-              executionStartTime={executionStartTimes.get(index)}
-              onActivate={() => setActiveCellIndex(index)}
-              onUpdate={(source) => handleUpdateCell(index, source)}
-              onUpdateTitle={(title) => handleUpdateTitle(index, title)}
-              onRun={() => handleRunCell(index)}
-              onDelete={() => handleDeleteCell(index)}
-              onDuplicate={() => handleDuplicateCell(index)}
-              onMoveUp={() => handleMoveUp(index)}
-              onMoveDown={() => handleMoveDown(index)}
-              onInsertAbove={(type) => handleInsertAbove(index, type)}
-              onInsertBelow={(type) => handleInsertBelow(index, type)}
-              onChangeType={(type) => handleChangeType(index, type)}
-              onChangeLanguage={(lang) => handleChangeLanguage(index, lang)}
-              onClearOutput={() => handleClearOutput(index)}
-              canMoveUp={index > 0}
-              canMoveDown={index < cells.length - 1}
-              readOnly={readOnly}
-              language={language}
-              totalCells={cells.length}
-              isDarkMode={isDarkMode}
-            />
+              ref={(el) => {
+                if (el) {
+                  cellRefs.current.set(index, el);
+                } else {
+                  cellRefs.current.delete(index);
+                }
+              }}
+            >
+              <NotebookCellComponent
+                cell={cell}
+                index={index}
+                cellNumber={index + 1}
+                isActive={index === activeCellIndex}
+                isRunning={runningCells.has(index)}
+                executionStartTime={executionStartTimes.get(index)}
+                onActivate={() => setActiveCellIndex(index)}
+                onUpdate={(source) => handleUpdateCell(index, source)}
+                onUpdateTitle={(title) => handleUpdateTitle(index, title)}
+                onRun={() => handleRunCell(index)}
+                onDelete={() => handleDeleteCell(index)}
+                onDuplicate={() => handleDuplicateCell(index)}
+                onMoveUp={() => handleMoveUp(index)}
+                onMoveDown={() => handleMoveDown(index)}
+                onInsertAbove={(type) => handleInsertAbove(index, type)}
+                onInsertBelow={(type) => handleInsertBelow(index, type)}
+                onChangeType={(type) => handleChangeType(index, type)}
+                onChangeLanguage={(lang) => handleChangeLanguage(index, lang)}
+                onClearOutput={() => handleClearOutput(index)}
+                canMoveUp={index > 0}
+                canMoveDown={index < cells.length - 1}
+                readOnly={readOnly}
+                language={language}
+                totalCells={cells.length}
+                isDarkMode={isDarkMode}
+              />
+            </div>
           ))}
 
           {/* Bottom add cell button - Databricks style */}
@@ -1944,6 +1978,110 @@ export const NotebookEditor: React.FC<NotebookEditorProps> = ({
 
           {/* Bottom spacer */}
           <div className="h-24" />
+        </div>
+
+        {/* Cell Navigation Panel - Databricks style */}
+        <div 
+          className={cn(
+            'flex flex-col border-l transition-all duration-200 flex-shrink-0',
+            isDarkMode ? 'bg-[#1e1e1e] border-white/10' : 'bg-white border-black/10',
+            cellNavExpanded ? 'w-48' : 'w-8'
+          )}
+        >
+          {/* Toggle/Header area */}
+          <div 
+            className={cn(
+              'cursor-pointer',
+              cellNavExpanded ? 'p-2 border-b' : 'flex-1',
+              isDarkMode ? 'border-white/10 hover:bg-white/5' : 'border-black/10 hover:bg-black/5'
+            )}
+            onClick={() => setCellNavExpanded(!cellNavExpanded)}
+          >
+            {cellNavExpanded ? (
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-muted-foreground">Cells</span>
+                <ChevronDown className="w-3.5 h-3.5 text-muted-foreground rotate-0" />
+              </div>
+            ) : (
+              /* Collapsed view - show vertical bars for each cell */
+              <div className="flex flex-col items-center gap-0.5 py-2">
+                {cells.map((cell, index) => (
+                  <div
+                    key={cell.id || index}
+                    className={cn(
+                      'w-1 h-3 rounded-sm transition-colors',
+                      index === activeCellIndex 
+                        ? 'bg-primary' 
+                        : hasErrorOutput(cell.outputs)
+                          ? 'bg-red-500'
+                          : isDarkMode ? 'bg-white/20' : 'bg-black/20'
+                    )}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Expanded content */}
+          {cellNavExpanded && (
+            <div className="flex-1 overflow-auto">
+              {/* Quick actions */}
+              <div className={cn(
+                'p-2 space-y-1 border-b',
+                isDarkMode ? 'border-white/10' : 'border-black/10'
+              )}>
+                <button
+                  onClick={() => lastRunCellIndex >= 0 && scrollToCell(lastRunCellIndex)}
+                  disabled={lastRunCellIndex < 0}
+                  className={cn(
+                    'w-full text-left text-xs px-2 py-1.5 rounded transition-colors',
+                    lastRunCellIndex >= 0 
+                      ? 'text-primary hover:bg-primary/10 cursor-pointer'
+                      : 'text-muted-foreground/50 cursor-not-allowed'
+                  )}
+                >
+                  Go to last run cell
+                </button>
+                <button
+                  onClick={() => firstFailedCellIndex >= 0 && scrollToCell(firstFailedCellIndex)}
+                  disabled={firstFailedCellIndex < 0}
+                  className={cn(
+                    'w-full text-left text-xs px-2 py-1.5 rounded transition-colors',
+                    firstFailedCellIndex >= 0 
+                      ? 'text-red-500 hover:bg-red-500/10 cursor-pointer'
+                      : 'text-muted-foreground/50 cursor-not-allowed'
+                  )}
+                >
+                  Go to first failed cell
+                </button>
+              </div>
+
+              {/* Cell list */}
+              <div className="py-1">
+                {cells.map((cell, index) => (
+                  <button
+                    key={cell.id || index}
+                    onClick={() => scrollToCell(index)}
+                    className={cn(
+                      'w-full flex items-center justify-between px-2 py-1.5 text-xs transition-colors',
+                      index === activeCellIndex 
+                        ? isDarkMode ? 'bg-white/10' : 'bg-black/5'
+                        : 'hover:bg-black/5 dark:hover:bg-white/5'
+                    )}
+                  >
+                    <span className={cn(
+                      hasErrorOutput(cell.outputs) ? 'text-red-500' : 'text-foreground'
+                    )}>
+                      Cell {index + 1}
+                    </span>
+                    {hasErrorOutput(cell.outputs) && (
+                      <Minus className="w-3 h-3 text-red-500" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Databricks-style Right Sidebar */}

@@ -46,7 +46,7 @@ import { getObjectById } from '../../services/api';
 
 export const Workspace: React.FC = () => {
   const { t } = useTranslation();
-  const { fileId } = useParams<{ fileId?: string }>();
+  const { fileId: pathFileId } = useParams<{ fileId?: string }>();
   const location = useLocation();
   const navigate = useNavigate();
   const { 
@@ -68,6 +68,11 @@ export const Workspace: React.FC = () => {
   const isNotebookRoute = location.pathname.startsWith('/editor/notebooks/');
   const isFileRoute = location.pathname.startsWith('/editor/files/');
 
+  // Get fileId from path params or query params
+  const queryParams = new URLSearchParams(location.search);
+  const queryFileId = queryParams.get('fileId');
+  const fileId = pathFileId || queryFileId;
+
   // Open file from URL parameter when component mounts or fileId changes
   useEffect(() => {
     const openFileFromUrl = async () => {
@@ -83,6 +88,16 @@ export const Workspace: React.FC = () => {
       setUrlFileLoading(true);
       try {
         const file = await getObjectById(numericFileId);
+        
+        // If accessed via query param (?fileId=xxx), redirect to proper URL format
+        if (queryFileId && !pathFileId) {
+          const targetUrl = file.type === 'notebook' 
+            ? `/editor/notebooks/${numericFileId}` 
+            : `/editor/files/${numericFileId}`;
+          navigate(targetUrl, { replace: true });
+          await openFile(file);
+          return;
+        }
         
         // Validate that the URL matches the file type
         if (isNotebookRoute && file.type !== 'notebook') {
@@ -107,7 +122,7 @@ export const Workspace: React.FC = () => {
     };
     
     openFileFromUrl();
-  }, [fileId]);
+  }, [fileId, queryFileId, pathFileId]);
 
   // Load file details when active tab changes
   useEffect(() => {
