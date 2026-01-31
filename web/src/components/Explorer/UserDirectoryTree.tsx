@@ -54,6 +54,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
@@ -75,6 +82,7 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
 } from '@/components/ui/dropdown-menu';
+import { Label } from '@/components/ui/label';
 import { UserResponse, FileItem } from '../../types';
 import { getUsersByAppId, createFile, createDirectory, updateObject, deleteObject, moveObject, copyObject, downloadFile, getFileUrl } from '../../services/api';
 import { useApp } from '../../context/AppContext';
@@ -178,9 +186,18 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
   const [newName, setNewName] = useState('');
   const [createDialog, setCreateDialog] = useState<{ 
     open: boolean; 
-    type: 'file' | 'directory' | 'notebook' | 'query' | 'gitFolder' | null; 
+    type: 'file' | 'directory' | 'notebook' | 'query' | null; 
     parentId?: number 
   }>({ open: false, type: null });
+  // Git folder dialog state
+  const [gitFolderDialog, setGitFolderDialog] = useState<{
+    open: boolean;
+    parentId?: number;
+  }>({ open: false });
+  const [gitRepoUrl, setGitRepoUrl] = useState('');
+  const [gitProvider, setGitProvider] = useState('');
+  const [gitFolderName, setGitFolderName] = useState('');
+  const [sparseCheckoutMode, setSparseCheckoutMode] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; item: FileItem | null }>({ open: false, item: null });
   const [moveDialog, setMoveDialog] = useState<{ open: boolean; item: FileItem | null; mode: 'move' | 'copy' }>({ open: false, item: null, mode: 'move' });
   const [selectedTargetFolder, setSelectedTargetFolder] = useState<number | null>(null);
@@ -283,10 +300,16 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
   };
 
   // Navigate into a folder
-  const handleFolderNavigate = (folder: FileItem) => {
-    setFolderPath(prev => [...prev, folder]);
-    setCurrentFolder(folder);
-  };
+  const handleFolderNavigate = useCallback((folder: FileItem) => {
+    // Ensure the folder has a children array (even if empty)
+    // This fixes the issue where newly created folders don't have children property
+    const folderWithChildren: FileItem = {
+      ...folder,
+      children: folder.children || []
+    };
+    setFolderPath(prev => [...prev, folderWithChildren]);
+    setCurrentFolder(folderWithChildren);
+  }, []);
 
   // Navigate to a specific folder in the breadcrumb path
   const handleBreadcrumbNavigate = (index: number) => {
@@ -311,7 +334,7 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
     setExpandedNodes(newExpanded);
   };
 
-  const handleItemClick = async (item: FileItem) => {
+  const handleItemClick = useCallback(async (item: FileItem) => {
     setSelectedNodeId(item.id);
     if (item.type === 'directory') {
       // Navigate into the folder instead of expanding
@@ -323,12 +346,12 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
         console.error('打开文件失败:', error);
       }
     }
-  };
+  }, [handleFolderNavigate, openFile, setSelectedNodeId]);
 
-  const handleCreate = async (type: 'file' | 'directory' | 'notebook' | 'query' | 'gitFolder', name: string, parentId?: number) => {
+  const handleCreate = async (type: 'file' | 'directory' | 'notebook' | 'query', name: string, parentId?: number) => {
     try {
       setOperationLoading(true);
-      if (type === 'directory' || type === 'gitFolder') {
+      if (type === 'directory') {
         await createDirectory(name, parentId);
       } else if (type === 'notebook') {
         // 创建 Notebook 文件
@@ -369,6 +392,33 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
       setSnackbar({ open: true, message: t('explorer.createSuccess'), severity: 'success' });
     } catch (error) {
       console.error('创建失败:', error);
+      setSnackbar({ open: true, message: t('explorer.createFailed'), severity: 'error' });
+    } finally {
+      setOperationLoading(false);
+    }
+  };
+
+  // Handle Git folder creation
+  const handleCreateGitFolder = async () => {
+    if (!gitFolderName.trim()) return;
+    
+    try {
+      setOperationLoading(true);
+      // For now, just create a regular directory with the git folder name
+      // TODO: Implement actual git clone functionality with gitRepoUrl and gitProvider
+      await createDirectory(gitFolderName, gitFolderDialog.parentId);
+      await refreshFileTree();
+      
+      // Reset git folder dialog state
+      setGitFolderDialog({ open: false });
+      setGitRepoUrl('');
+      setGitProvider('');
+      setGitFolderName('');
+      setSparseCheckoutMode(false);
+      
+      setSnackbar({ open: true, message: t('explorer.createSuccess'), severity: 'success' });
+    } catch (error) {
+      console.error('创建 Git folder 失败:', error);
       setSnackbar({ open: true, message: t('explorer.createFailed'), severity: 'error' });
     } finally {
       setOperationLoading(false);
@@ -570,8 +620,11 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
           setNewName('');
           break;
         case 'newGitFolder':
-          setCreateDialog({ open: true, type: 'gitFolder', parentId: item.id });
-          setNewName('');
+          setGitFolderDialog({ open: true, parentId: item.id });
+          setGitRepoUrl('');
+          setGitProvider('');
+          setGitFolderName('');
+          setSparseCheckoutMode(false);
           break;
         case 'newNotebook':
           setCreateDialog({ open: true, type: 'notebook', parentId: item.id });
@@ -1016,8 +1069,11 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
           setNewName('');
           break;
         case 'newGitFolder':
-          setCreateDialog({ open: true, type: 'gitFolder', parentId: item.id });
-          setNewName('');
+          setGitFolderDialog({ open: true, parentId: item.id });
+          setGitRepoUrl('');
+          setGitProvider('');
+          setGitFolderName('');
+          setSparseCheckoutMode(false);
           break;
         case 'newNotebook':
           setCreateDialog({ open: true, type: 'notebook', parentId: item.id });
@@ -1096,16 +1152,26 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
     };
 
     return (
-      <div key={item.id} className="group">
+      <div 
+        key={item.id} 
+        className="group"
+        onClick={() => handleItemClick(item)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            handleItemClick(item);
+          }
+        }}
+      >
         <ContextMenu>
           <ContextMenuTrigger asChild>
-            <button
+            <div
               className={cn(
-                'w-full flex items-center gap-2 px-3 py-2 text-[13px] transition-colors',
+                'w-full flex items-center gap-2 px-3 py-2 text-[13px] transition-colors cursor-pointer',
                 'hover:bg-accent/50 border-b border-border/50',
                 isSelected && 'bg-primary/10 hover:bg-primary/15'
               )}
-              onClick={() => handleItemClick(item)}
             >
               {/* Icon */}
               <span className="flex-shrink-0">
@@ -1246,7 +1312,7 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          </button>
+          </div>
         </ContextMenuTrigger>
         <ContextMenuContent className="w-48">
           {!isFolder && (
@@ -1532,8 +1598,11 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
                         {t('explorer.newFolder')}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => {
-                        setCreateDialog({ open: true, type: 'gitFolder', parentId: currentFolder?.id });
-                        setNewName('');
+                        setGitFolderDialog({ open: true, parentId: currentFolder?.id });
+                        setGitRepoUrl('');
+                        setGitProvider('');
+                        setGitFolderName('');
+                        setSparseCheckoutMode(false);
                       }}>
                         <GitBranch className="w-4 h-4 mr-2" />
                         {t('explorer.newGitFolder')}
@@ -1732,7 +1801,6 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
           <DialogHeader>
             <DialogTitle>
               {createDialog.type === 'directory' && t('explorer.newFolder')}
-              {createDialog.type === 'gitFolder' && t('explorer.newGitFolder')}
               {createDialog.type === 'notebook' && t('explorer.newNotebook')}
               {createDialog.type === 'query' && t('explorer.newQuery')}
               {createDialog.type === 'file' && t('explorer.newFile')}
@@ -1774,6 +1842,108 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
             >
               {operationLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               {t('common.confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Git Folder 创建对话框 */}
+      <Dialog open={gitFolderDialog.open} onOpenChange={(open) => {
+        if (!open) {
+          setGitFolderDialog({ open: false });
+          setGitRepoUrl('');
+          setGitProvider('');
+          setGitFolderName('');
+          setSparseCheckoutMode(false);
+        }
+      }}>
+        <DialogContent className="sm:max-w-[550px]">
+          <DialogHeader>
+            <DialogTitle>Create Git folder</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            {/* Git repository URL and Git provider in same row */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="git-repo-url" className="text-sm flex items-center gap-1">
+                  Git repository URL
+                  <span className="text-muted-foreground cursor-help" title="The URL of your Git repository">ⓘ</span>
+                </Label>
+                <Input
+                  id="git-repo-url"
+                  placeholder="https://example.com/organization/project.git"
+                  value={gitRepoUrl}
+                  onChange={(e) => setGitRepoUrl(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="git-provider" className="text-sm flex items-center gap-1">
+                  Git provider
+                  <span className="text-muted-foreground cursor-help" title="Select your Git provider">ⓘ</span>
+                </Label>
+                <Select value={gitProvider} onValueChange={setGitProvider}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a Git provider" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="github">GitHub</SelectItem>
+                    <SelectItem value="gitlab">GitLab</SelectItem>
+                    <SelectItem value="bitbucket">Bitbucket</SelectItem>
+                    <SelectItem value="azure">Azure DevOps</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            
+            {/* Git folder name */}
+            <div className="space-y-2">
+              <Label htmlFor="git-folder-name" className="text-sm">
+                Git folder name
+              </Label>
+              <Input
+                id="git-folder-name"
+                placeholder=""
+                value={gitFolderName}
+                onChange={(e) => setGitFolderName(e.target.value)}
+              />
+            </div>
+            
+            {/* Sparse checkout mode */}
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="sparse-checkout"
+                checked={sparseCheckoutMode}
+                onChange={(e) => setSparseCheckoutMode(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+              />
+              <Label htmlFor="sparse-checkout" className="text-sm font-normal flex items-center gap-1">
+                Sparse checkout mode
+                <span className="text-muted-foreground cursor-help" title="Only checkout specific files/folders">ⓘ</span>
+              </Label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setGitFolderDialog({ open: false });
+                setGitRepoUrl('');
+                setGitProvider('');
+                setGitFolderName('');
+                setSparseCheckoutMode(false);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleCreateGitFolder}
+              disabled={operationLoading || !gitFolderName.trim()}
+              className="bg-[#2563eb] hover:bg-[#1d4ed8] text-white"
+            >
+              {operationLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Create Git folder
             </Button>
           </DialogFooter>
         </DialogContent>

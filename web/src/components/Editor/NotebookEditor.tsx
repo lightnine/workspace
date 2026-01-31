@@ -59,6 +59,8 @@ import {
   MessageSquare,
   History,
   Hash,
+  Maximize2,
+  GripVertical,
 } from 'lucide-react';
 import { CellOperation } from '../../services/api';
 
@@ -391,8 +393,6 @@ const NotebookCellComponent: React.FC<CellProps> = ({
   const [outputCollapsed, setOutputCollapsed] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [elapsedTime, setElapsedTime] = useState<string>('');
-  const [isTitleEditing, setIsTitleEditing] = useState(false);
-  const [titleValue, setTitleValue] = useState(cell.metadata?.title || '');
   const editorRef = useRef<any>(null);
 
   const source = normalizeText(cell.source);
@@ -446,8 +446,18 @@ const NotebookCellComponent: React.FC<CellProps> = ({
 
   const executionTimeInfo = formatExecutionTime();
 
-  const handleEditorDidMount = (editor: any) => {
+  const handleEditorDidMount = (editor: any, _monaco: any) => {
     editorRef.current = editor;
+    
+    // Focus the editor when it's mounted and cell is active
+    if (isActive) {
+      editor.focus();
+    }
+    
+    // Trigger layout to ensure proper rendering
+    setTimeout(() => {
+      editor.layout();
+    }, 100);
   };
 
   const handleEditorChange = (value: string | undefined) => {
@@ -461,11 +471,14 @@ const NotebookCellComponent: React.FC<CellProps> = ({
     }
   };
 
-  // Calculate editor height
+  // Calculate editor height - ensure minimum height for proper editing
   const editorHeight = useMemo(() => {
     const displaySource = hasMagicCommand ? cleanSource : source;
     const lines = displaySource.split('\n').length;
-    return Math.max(38, Math.min(lines * 19 + 10, 400));
+    // Minimum height of 80px to ensure comfortable editing
+    // Each line is 20px high (lineHeight), with padding (top: 8, bottom: 8)
+    const height = Math.max(80, Math.min(lines * 20 + 16, 500));
+    return `${height}px`;
   }, [source, cleanSource, hasMagicCommand]);
 
   return (
@@ -473,46 +486,58 @@ const NotebookCellComponent: React.FC<CellProps> = ({
       onClick={onActivate}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      className="relative px-12 mb-0.5"
+      className="relative px-4 mb-1"
     >
-      {/* Databricks-style Cell container - minimal borders */}
+      {/* Databricks-style Cell container */}
       <div
         className={cn(
-          'rounded-md border transition-all',
+          'rounded-lg border transition-all',
           isActive 
-            ? 'border-primary/40 shadow-sm' 
-            : 'border-transparent hover:border-border/50',
-          hasError && 'border-red-500/40',
+            ? 'border-primary/50 shadow-md' 
+            : 'border-border/60 hover:border-border',
+          hasError && 'border-red-500/50',
           isDarkMode ? 'bg-[#1e1e1e]' : 'bg-white'
         )}
       >
-        {/* Cell header - Databricks style: compact and clean */}
+        {/* Cell header - Databricks style toolbar */}
         <div className={cn(
-          'flex items-center gap-2 px-2 py-1 min-h-[32px]',
-          isDarkMode ? 'bg-transparent' : 'bg-transparent'
+          'flex items-center gap-1 px-2 py-1.5 border-b',
+          isDarkMode ? 'border-white/5 bg-[#252526]' : 'border-black/5 bg-gray-50/50'
         )}>
-          {/* Left: Run button with dropdown */}
-          <div className="flex items-center">
+          {/* Left section: Drag handle + Run button with dropdown */}
+          <div className="flex items-center gap-1">
+            {/* Drag handle - Databricks style */}
+            <div className={cn(
+              'flex items-center justify-center w-5 h-5 cursor-grab',
+              'text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors',
+              (isHovered || isActive) ? 'opacity-100' : 'opacity-0'
+            )}>
+              <GripVertical className="w-3.5 h-3.5" />
+            </div>
+
             {isCodeCell && (
               <DropdownMenu>
+                {/* Databricks-style run button - blue only when active */}
                 <div className="flex items-center">
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button
-                          variant="ghost"
                           size="icon"
                           className={cn(
-                            'h-6 w-6 rounded-l rounded-r-none',
-                            isRunning && 'bg-primary/10'
+                            'h-7 w-7 rounded-l-md rounded-r-none',
+                            isActive 
+                              ? 'bg-[#2563eb] text-white hover:bg-[#1d4ed8]'  // Databricks blue for active
+                              : 'bg-muted text-muted-foreground hover:bg-muted/80',
+                            isRunning && 'bg-[#2563eb]/80'
                           )}
                           onClick={(e) => { e.stopPropagation(); onRun(); }}
                           disabled={readOnly || isRunning}
                         >
                           {isRunning ? (
-                            <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" />
+                            <Loader2 className="w-4 h-4 animate-spin" />
                           ) : (
-                            <Play className="w-3.5 h-3.5" />
+                            <Play className="w-4 h-4 fill-current" />
                           )}
                         </Button>
                       </TooltipTrigger>
@@ -521,9 +546,13 @@ const NotebookCellComponent: React.FC<CellProps> = ({
                   </TooltipProvider>
                   <DropdownMenuTrigger asChild>
                     <Button
-                      variant="ghost"
                       size="icon"
-                      className="h-6 w-4 rounded-l-none rounded-r px-0"
+                      className={cn(
+                        'h-7 w-5 rounded-r-md rounded-l-none px-0',
+                        isActive 
+                          ? 'bg-[#2563eb] text-white hover:bg-[#1d4ed8] border-l border-white/20'
+                          : 'bg-muted text-muted-foreground hover:bg-muted/80 border-l border-border'
+                      )}
                       disabled={readOnly}
                     >
                       <ChevronDown className="w-3 h-3" />
@@ -544,43 +573,40 @@ const NotebookCellComponent: React.FC<CellProps> = ({
             )}
             
             {isMarkdownCell && (
-              <div className="h-6 w-6 flex items-center justify-center">
+              <div className="h-7 w-7 flex items-center justify-center">
                 <Type className="w-4 h-4 text-muted-foreground" />
               </div>
             )}
           </div>
 
-          {/* Execution status indicator - Databricks style checkbox */}
-          {isCodeCell && (
-            <div className={cn(
-              'flex items-center justify-center',
-            )}>
-              {isRunning ? (
-                <Loader2 className="w-4 h-4 text-primary animate-spin" />
-              ) : hasError ? (
-                <XCircle className="w-4 h-4 text-red-500" />
-              ) : executionCount !== null && executionCount !== undefined ? (
-                <Check className="w-4 h-4 text-green-500" />
-              ) : (
-                <div className="w-4 h-4" /> // placeholder
-              )}
-            </div>
-          )}
-
-          {/* Execution time/status - Databricks style */}
-          <div className="flex-1 flex items-center gap-2 min-w-0">
+          {/* Execution status and time - Only show after execution (Databricks style) */}
+          <div className="flex items-center gap-2 min-w-0">
             {isCodeCell && (
               <>
+                {/* Status icon - No border, just the icon (Databricks style) */}
+                {(isRunning || hasError || (executionCount !== null && executionCount !== undefined)) && (
+                  <div className="flex items-center justify-center w-5 h-5">
+                    {isRunning ? (
+                      <Loader2 className="w-4 h-4 text-[#2563eb] animate-spin" />
+                    ) : hasError ? (
+                      <X className="w-4 h-4 text-red-500" />
+                    ) : (
+                      <Check className="w-4 h-4 text-green-500" />
+                    )}
+                  </div>
+                )}
+
+                {/* Execution time - Only show when running or has been executed */}
                 {isRunning ? (
-                  <span className="text-[11px] text-muted-foreground">
+                  <span className="text-xs text-muted-foreground">
                     Running... {elapsedTime}
                   </span>
                 ) : hasError ? (
-                  <span className="text-[11px] text-red-500 font-medium">
+                  <span className="text-xs text-red-500 font-medium">
                     Last execution failed
                   </span>
                 ) : executionTimeInfo ? (
-                  <span className="text-[11px] text-muted-foreground truncate">
+                  <span className="text-xs text-muted-foreground truncate">
                     {executionTimeInfo.dateStr} ({executionTimeInfo.execTime})
                   </span>
                 ) : null}
@@ -588,25 +614,25 @@ const NotebookCellComponent: React.FC<CellProps> = ({
             )}
           </div>
 
-          {/* Right: Cell number + Language badge + Actions */}
-          <div className="flex items-center gap-1.5">
-            {/* Language badge - Databricks style */}
+          <div className="flex-1" />
+
+          {/* Right section: Language + Cell number + Actions */}
+          <div className="flex items-center gap-1">
+            {/* Language badge - Databricks style (moved to right side) */}
             {isCodeCell && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
-                    variant="ghost"
+                    variant="outline"
                     size="sm"
                     className={cn(
-                      'h-5 px-1.5 text-[10px] font-semibold rounded',
-                      'hover:bg-muted/80',
-                      langConfig.id === 'sql' && 'text-orange-600',
-                      langConfig.id === 'python' && 'text-blue-600',
-                      langConfig.id === 'sh' && 'text-green-600',
+                      'h-6 px-2 text-xs font-medium rounded-md border',
+                      isDarkMode ? 'border-white/10 bg-transparent' : 'border-black/10 bg-white',
+                      'hover:bg-muted/50'
                     )}
                     disabled={readOnly}
                   >
-                    {langConfig.name.toUpperCase()}
+                    {langConfig.name}
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-36">
@@ -632,56 +658,42 @@ const NotebookCellComponent: React.FC<CellProps> = ({
               </DropdownMenu>
             )}
 
-            {/* Action buttons - icon row */}
+            {/* Cell number - prominent display */}
+            <span className={cn(
+              'text-xs font-medium tabular-nums px-1.5 min-w-[24px] text-center',
+              hasError ? 'text-red-500' : 'text-muted-foreground'
+            )}>
+              {cellNumber}
+            </span>
+
+            {/* Action buttons - Databricks style icon row */}
             <div className={cn(
-              'flex items-center gap-0 transition-opacity',
+              'flex items-center gap-0.5 transition-opacity',
               (isHovered || isActive) ? 'opacity-100' : 'opacity-0'
             )}>
+              {/* Delete button - Databricks style (trash icon) */}
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-6 w-6"
-                      onClick={(e) => { e.stopPropagation(); onDuplicate(); }}
-                      disabled={readOnly}
+                      className="h-7 w-7 hover:text-red-500"
+                      onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                      disabled={readOnly || totalCells <= 1}
                     >
-                      <Copy className="w-3.5 h-3.5" />
+                      <Trash2 className="w-4 h-4" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>{t('notebook.duplicate')}</TooltipContent>
+                  <TooltipContent>{t('notebook.deleteCell')}</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
-              
-              {/* Expand/collapse toggle for output */}
-              {isCodeCell && hasOutput && (
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={(e) => { e.stopPropagation(); setOutputCollapsed(!outputCollapsed); }}
-                      >
-                        {outputCollapsed ? (
-                          <ChevronsUpDown className="w-3.5 h-3.5" />
-                        ) : (
-                          <ChevronsDownUp className="w-3.5 h-3.5" />
-                        )}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>{outputCollapsed ? 'Expand output' : 'Collapse output'}</TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              )}
 
-              {/* More menu */}
+              {/* Settings/More menu - Databricks style (gear icon) */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-6 w-6">
-                    <MoreVertical className="w-3.5 h-3.5" />
+                  <Button variant="ghost" size="icon" className="h-7 w-7">
+                    <Settings className="w-4 h-4" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
@@ -729,113 +741,46 @@ const NotebookCellComponent: React.FC<CellProps> = ({
                     </>
                   )}
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem 
-                    onClick={onDelete} 
-                    disabled={readOnly || totalCells <= 1}
-                    className="text-red-500 focus:text-red-500"
-                  >
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    {t('notebook.deleteCell')}
+                  <DropdownMenuItem onClick={() => onDuplicate()} disabled={readOnly}>
+                    <Copy className="w-4 h-4 mr-2" />
+                    {t('notebook.duplicate')}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-            </div>
 
-            {/* Cell number - right aligned */}
-            <span className={cn(
-              'text-[11px] font-mono w-5 text-right tabular-nums',
-              hasError ? 'text-red-500' : 'text-muted-foreground/70'
-            )}>
-              {cellNumber}
-            </span>
+              {/* Fullscreen button - Databricks style */}
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={(e) => { e.stopPropagation(); }}
+                    >
+                      <Maximize2 className="w-4 h-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Fullscreen</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
           </div>
         </div>
 
-        {/* Cell content */}
-        <div className="px-2 pb-1">
-          {/* Databricks-style Cell title input - only show when active or has title */}
-          {isCodeCell && (isActive || cell.metadata?.title) && (
-            <div className={cn(
-              'flex items-center gap-2 pb-1 mb-1',
-              (isActive || isHovered) ? 'opacity-100' : 'opacity-60'
-            )}>
-              {isTitleEditing ? (
-                <input
-                  type="text"
-                  className={cn(
-                    'flex-1 h-6 px-2 text-[12px] rounded border bg-transparent',
-                    'outline-none focus:border-primary/50',
-                    isDarkMode ? 'border-white/10 text-zinc-300' : 'border-black/10 text-zinc-700'
-                  )}
-                  value={titleValue}
-                  onChange={(e) => setTitleValue(e.target.value)}
-                  onBlur={() => {
-                    setIsTitleEditing(false);
-                    if (titleValue !== cell.metadata?.title) {
-                      onUpdateTitle(titleValue);
-                    }
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      setIsTitleEditing(false);
-                      if (titleValue !== cell.metadata?.title) {
-                        onUpdateTitle(titleValue);
-                      }
-                    } else if (e.key === 'Escape') {
-                      setIsTitleEditing(false);
-                      setTitleValue(cell.metadata?.title || '');
-                    }
-                  }}
-                  autoFocus
-                  placeholder="Cell title"
-                  disabled={readOnly}
-                />
-              ) : (
-                <button
-                  className={cn(
-                    'flex-1 h-6 px-2 text-[12px] text-left rounded border border-transparent',
-                    'hover:border-border/50 transition-colors',
-                    cell.metadata?.title 
-                      ? (isDarkMode ? 'text-zinc-300' : 'text-zinc-700')
-                      : 'text-muted-foreground/60 italic'
-                  )}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (!readOnly) {
-                      setIsTitleEditing(true);
-                    }
-                  }}
-                  disabled={readOnly}
-                >
-                  {cell.metadata?.title || 'Cell title'}
-                </button>
-              )}
-              {!cell.metadata?.title && !isTitleEditing && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-5 px-2 text-[10px] text-muted-foreground hover:text-foreground"
-                  onClick={(e) => { e.stopPropagation(); }}
-                  disabled={readOnly}
-                >
-                  <Sparkles className="w-3 h-3 mr-1" />
-                  Suggest a title
-                </Button>
-              )}
-            </div>
-          )}
-          
+        {/* Cell content - Databricks style: content starts from the left */}
+        <div className="py-0.5">
           {isCodeCell ? (
-            // Code editor with magic command prefix
+            // Code editor with line numbers - Databricks style, aligned to left
             <div className="relative">
               {/* Magic command prefix display */}
               {hasMagicCommand && (
                 <div className={cn(
-                  'absolute left-0 top-2 z-10 px-2 text-[11px] font-mono',
+                  'absolute left-10 top-2 z-10 text-[11px] font-mono',
                   isDarkMode ? 'text-zinc-500' : 'text-zinc-400'
                 )}>
                   <span className={cn(
-                    'px-1 py-0.5 rounded',
+                    'px-1.5 py-0.5 rounded',
                     isDarkMode ? 'bg-zinc-800' : 'bg-zinc-100'
                   )}>
                     {langConfig.magicCommand}
@@ -843,8 +788,8 @@ const NotebookCellComponent: React.FC<CellProps> = ({
                 </div>
               )}
               <div className={cn(
-                '[&_.monaco-editor]:pt-0.5 [&_.monaco-editor_.margin]:!bg-transparent',
-                hasMagicCommand && 'pl-14' // offset for magic command
+                '[&_.monaco-editor]:rounded-none min-h-[60px]',
+                hasMagicCommand && 'pt-6' // offset for magic command
               )}>
                 <Editor
                   height={editorHeight}
@@ -854,7 +799,7 @@ const NotebookCellComponent: React.FC<CellProps> = ({
                   onMount={handleEditorDidMount}
                   options={{
                     minimap: { enabled: false },
-                    lineNumbers: 'off',
+                    lineNumbers: 'on',
                     lineNumbersMinChars: 2,
                     folding: false,
                     wordWrap: 'on',
@@ -863,42 +808,29 @@ const NotebookCellComponent: React.FC<CellProps> = ({
                     fontSize: 13,
                     fontFamily: '"JetBrains Mono", "Fira Code", "Consolas", monospace',
                     readOnly: readOnly,
-                    renderLineHighlight: 'none',
+                    renderLineHighlight: isActive ? 'line' : 'none',
                     scrollbar: {
-                      vertical: 'hidden',
+                      vertical: 'auto',
                       horizontal: 'auto',
-                      verticalScrollbarSize: 0,
-                      horizontalScrollbarSize: 6
+                      verticalScrollbarSize: 8,
+                      horizontalScrollbarSize: 8
                     },
-                    padding: { top: 6, bottom: 6 },
+                    padding: { top: 4, bottom: 4 },
                     overviewRulerLanes: 0,
                     hideCursorInOverviewRuler: true,
                     overviewRulerBorder: false,
                     contextmenu: true,
                     glyphMargin: false,
                     lineDecorationsWidth: 0,
-                    renderWhitespace: 'none'
+                    renderWhitespace: 'none',
+                    acceptSuggestionOnEnter: 'smart',
+                    lineHeight: 20,
+                    cursorBlinking: 'smooth',
+                    cursorSmoothCaretAnimation: 'on',
                   }}
                   theme={isDarkMode ? 'vs-dark' : 'light'}
                 />
               </div>
-              {/* Edit code with Assistant button - Databricks style */}
-              {(isActive || isHovered) && !readOnly && (
-                <div className={cn(
-                  'flex items-center gap-2 mt-1 transition-opacity',
-                  (isActive || isHovered) ? 'opacity-100' : 'opacity-0'
-                )}>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2 text-[11px] text-muted-foreground hover:text-foreground"
-                    onClick={(e) => { e.stopPropagation(); }}
-                  >
-                    <Sparkles className="w-3 h-3 mr-1" />
-                    Edit code with Assistant
-                  </Button>
-                </div>
-              )}
             </div>
           ) : isMarkdownCell ? (
             // Markdown edit/preview
@@ -1979,26 +1911,32 @@ export const NotebookEditor: React.FC<NotebookEditorProps> = ({
             />
           ))}
 
-          {/* Bottom add cell button */}
+          {/* Bottom add cell button - Databricks style */}
           {!readOnly && (
-            <div className="flex items-center justify-center gap-1 py-2 px-12 opacity-40 hover:opacity-100 transition-opacity">
+            <div className="flex items-center justify-center gap-2 py-4 px-4 opacity-50 hover:opacity-100 transition-opacity">
               <div className={cn('flex-1 h-px', isDarkMode ? 'bg-white/10' : 'bg-black/10')} />
               <Button
-                variant="ghost"
+                variant="outline"
                 size="sm"
-                className="h-6 px-3 text-[11px] text-muted-foreground"
+                className={cn(
+                  'h-7 px-3 text-xs',
+                  isDarkMode ? 'border-white/20 hover:bg-white/5' : 'border-black/20 hover:bg-black/5'
+                )}
                 onClick={() => handleInsertBelow(cells.length - 1, 'code')}
               >
-                <Plus className="w-3 h-3 mr-1" />
+                <Plus className="w-3.5 h-3.5 mr-1.5" />
                 Add code cell
               </Button>
               <Button
-                variant="ghost"
+                variant="outline"
                 size="sm"
-                className="h-6 px-3 text-[11px] text-muted-foreground"
+                className={cn(
+                  'h-7 px-3 text-xs',
+                  isDarkMode ? 'border-white/20 hover:bg-white/5' : 'border-black/20 hover:bg-black/5'
+                )}
                 onClick={() => handleInsertBelow(cells.length - 1, 'markdown')}
               >
-                <Plus className="w-3 h-3 mr-1" />
+                <Plus className="w-3.5 h-3.5 mr-1.5" />
                 Add text cell
               </Button>
               <div className={cn('flex-1 h-px', isDarkMode ? 'bg-white/10' : 'bg-black/10')} />
