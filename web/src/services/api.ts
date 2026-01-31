@@ -1,5 +1,5 @@
 import axios, { AxiosInstance, AxiosError, AxiosResponse } from 'axios';
-import { ApiResponse, FileItem, SearchSuggestion, RecentItem, PaginatedResponse } from '../types';
+import { ApiResponse, FileItem, SearchSuggestion, RecentItem, PaginatedResponse, UserResponse } from '../types';
 
 // Token 管理
 const TOKEN_KEY = 'access_token';
@@ -324,6 +324,36 @@ export const copyObject = async (id: number, targetParentId?: number, newName?: 
   return response.data.data!;
 };
 
+// 下载文件
+export const downloadFile = async (id: number, fileName: string): Promise<void> => {
+  const response = await apiClient.get(`/api/v1/objects/${id}/download`, {
+    responseType: 'blob'
+  });
+  
+  // 创建下载链接
+  const blob = new Blob([response.data]);
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(url);
+};
+
+// 获取文件下载 URL（用于在新标签页打开）
+export const getDownloadUrl = (id: number): string => {
+  const baseURL = (import.meta.env?.VITE_API_BASE_URL as string) || 'http://localhost:8080';
+  return `${baseURL}/api/v1/objects/${id}/download`;
+};
+
+// 获取文件的完整路径 URL（用于复制）
+export const getFileUrl = (id: number): string => {
+  const baseURL = window.location.origin;
+  return `${baseURL}/workspace?fileId=${id}`;
+};
+
 // 搜索 API
 
 // 按名称搜索
@@ -413,6 +443,88 @@ export const addRecent = async (item: Omit<RecentItem, 'id' | 'lastAccessed'>): 
   } catch (error) {
     console.error('保存最近访问失败:', error);
   }
+};
+
+// 获取当前 AppID 下的所有用户
+export const getUsersByAppId = async (): Promise<UserResponse[]> => {
+  const response = await apiClient.get<ApiResponse<UserResponse[]>>('/api/v1/users/app');
+  if (response.data.code !== 0) {
+    throw new Error(response.data.message);
+  }
+  return response.data.data || [];
+};
+
+// 版本历史 API
+
+// 版本信息接口
+export interface VersionInfo {
+  id: string;
+  version_number: number;
+  size: number;
+  message?: string;
+  creator?: {
+    id: string;
+    email: string;
+    username: string;
+    display_name?: string;
+  };
+  created_at: string;
+}
+
+// 版本列表响应
+export interface VersionListResponse {
+  items: VersionInfo[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+// 获取对象的版本列表
+export const getVersionsByObjectId = async (
+  objectId: number,
+  page: number = 1,
+  pageSize: number = 50
+): Promise<VersionListResponse> => {
+  const response = await apiClient.get<ApiResponse<VersionListResponse>>(
+    `/api/v1/versions/objects/${objectId}`,
+    { params: { page, page_size: pageSize } }
+  );
+  if (response.data.code !== 0) {
+    throw new Error(response.data.message);
+  }
+  return response.data.data || { items: [], total: 0, page: 1, page_size: pageSize };
+};
+
+// 获取特定版本的内容
+export const getVersionContent = async (versionId: string): Promise<string> => {
+  const response = await apiClient.get(`/api/v1/versions/${versionId}/content`, {
+    responseType: 'arraybuffer'
+  });
+  // 将 ArrayBuffer 转换为字符串
+  const decoder = new TextDecoder('utf-8');
+  return decoder.decode(new Uint8Array(response.data));
+};
+
+// 恢复到指定版本
+export const restoreVersion = async (versionId: string): Promise<FileItem> => {
+  const response = await apiClient.post<ApiResponse<FileItem>>(
+    `/api/v1/versions/${versionId}/restore`
+  );
+  if (response.data.code !== 0) {
+    throw new Error(response.data.message);
+  }
+  return response.data.data!;
+};
+
+// 获取版本详情
+export const getVersionById = async (versionId: string): Promise<VersionInfo> => {
+  const response = await apiClient.get<ApiResponse<VersionInfo>>(
+    `/api/v1/versions/${versionId}`
+  );
+  if (response.data.code !== 0) {
+    throw new Error(response.data.message);
+  }
+  return response.data.data!;
 };
 
 export default apiClient;

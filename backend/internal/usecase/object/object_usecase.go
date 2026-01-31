@@ -18,10 +18,10 @@ import (
 // UseCase defines the object use case interface
 type UseCase interface {
 	// Directory operations
-	CreateDirectory(ctx context.Context, creatorID uuid.UUID, input *CreateDirectoryInput) (*entity.ObjectResponse, error)
+	CreateDirectory(ctx context.Context, creatorID uuid.UUID, appID, email string, input *CreateDirectoryInput) (*entity.ObjectResponse, error)
 
 	// File operations
-	CreateFile(ctx context.Context, creatorID uuid.UUID, input *CreateFileInput) (*entity.ObjectResponse, error)
+	CreateFile(ctx context.Context, creatorID uuid.UUID, appID, email string, input *CreateFileInput) (*entity.ObjectResponse, error)
 	GetContent(ctx context.Context, objectID int64) ([]byte, error)
 	SaveContent(ctx context.Context, objectID int64, userID uuid.UUID, content []byte, message string) (*entity.ObjectResponse, error)
 	PatchNotebook(ctx context.Context, objectID int64, userID uuid.UUID, input *PatchNotebookInput) (*entity.ObjectResponse, error)
@@ -31,11 +31,11 @@ type UseCase interface {
 	GetByPath(ctx context.Context, path string) (*entity.ObjectResponse, error)
 	List(ctx context.Context, filter *entity.ObjectFilter) ([]entity.ObjectResponse, int64, error)
 	ListChildren(ctx context.Context, parentID *int64, page, pageSize int) ([]entity.ObjectResponse, int64, error)
-	GetTree(ctx context.Context, userID uuid.UUID, depth int) ([]entity.ObjectResponse, error)
+	GetTree(ctx context.Context, userID uuid.UUID, appID, email string, depth int) ([]entity.ObjectResponse, error)
 	Update(ctx context.Context, id int64, input *UpdateInput) (*entity.ObjectResponse, error)
 	Delete(ctx context.Context, id int64) error
 	Move(ctx context.Context, id int64, input *MoveInput) (*entity.ObjectResponse, error)
-	Copy(ctx context.Context, id int64, creatorID uuid.UUID, input *CopyInput) (*entity.ObjectResponse, error)
+	Copy(ctx context.Context, id int64, creatorID uuid.UUID, appID, email string, input *CopyInput) (*entity.ObjectResponse, error)
 }
 
 // CreateDirectoryInput represents directory creation input
@@ -79,7 +79,9 @@ type PatchNotebookInput struct {
 type MoveInput struct {
 	TargetParentID *int64    `json:"target_parent_id"`
 	NewName        *string   `json:"new_name"`
-	UserID         uuid.UUID `json:"-"` // Set by handler, not from JSON
+	UserID         uuid.UUID `json:"-"`  // Set by handler, not from JSON
+	AppID          string    `json:"-"`  // Set by handler, not from JSON
+	Email          string    `json:"-"`  // Set by handler, not from JSON
 }
 
 // CopyInput represents object copy input
@@ -110,10 +112,10 @@ func NewUseCase(
 	}
 }
 
-func (u *objectUseCase) CreateDirectory(ctx context.Context, creatorID uuid.UUID, input *CreateDirectoryInput) (*entity.ObjectResponse, error) {
+func (u *objectUseCase) CreateDirectory(ctx context.Context, creatorID uuid.UUID, appID, email string, input *CreateDirectoryInput) (*entity.ObjectResponse, error) {
 	// Build path - 在用户目录下创建
-	// 用户目录路径: /{userID}/{name}
-	userDir := "/" + creatorID.String()
+	// 用户目录路径: /{appID}/{email}/{name}
+	userDir := "/" + appID + "/" + email
 	path := userDir + "/" + input.Name
 
 	// 确保用户目录存在
@@ -152,15 +154,15 @@ func (u *objectUseCase) CreateDirectory(ctx context.Context, creatorID uuid.UUID
 	return obj.ToResponse(), nil
 }
 
-func (u *objectUseCase) CreateFile(ctx context.Context, creatorID uuid.UUID, input *CreateFileInput) (*entity.ObjectResponse, error) {
+func (u *objectUseCase) CreateFile(ctx context.Context, creatorID uuid.UUID, appID, email string, input *CreateFileInput) (*entity.ObjectResponse, error) {
 	// Infer type from extension if not provided
 	if input.Type == "" {
 		input.Type = entity.InferTypeFromExtension(input.Name)
 	}
 
 	// Build path - 在用户目录下创建
-	// 用户目录路径: /{userID}/{name}
-	userDir := "/" + creatorID.String()
+	// 用户目录路径: /{appID}/{email}/{name}
+	userDir := "/" + appID + "/" + email
 	path := userDir + "/" + input.Name
 
 	// 确保用户目录存在
@@ -524,7 +526,7 @@ func (u *objectUseCase) ListChildren(ctx context.Context, parentID *int64, page,
 	return responses, total, nil
 }
 
-func (u *objectUseCase) GetTree(ctx context.Context, userID uuid.UUID, depth int) ([]entity.ObjectResponse, error) {
+func (u *objectUseCase) GetTree(ctx context.Context, userID uuid.UUID, appID, email string, depth int) ([]entity.ObjectResponse, error) {
 	// 获取用户目录下的所有对象
 	objects, err := u.objectRepo.ListByCreator(ctx, userID)
 	if err != nil {
@@ -730,8 +732,8 @@ func (u *objectUseCase) Move(ctx context.Context, id int64, input *MoveInput) (*
 		}
 		newPath = parent.Path + "/" + newName
 	} else {
-		// When moving to root, use user's directory
-		userDir := "/" + input.UserID.String()
+		// When moving to root, use user's directory: /{appID}/{email}
+		userDir := "/" + input.AppID + "/" + input.Email
 		newPath = userDir + "/" + newName
 	}
 
@@ -778,7 +780,7 @@ func (u *objectUseCase) Move(ctx context.Context, id int64, input *MoveInput) (*
 	return obj.ToResponse(), nil
 }
 
-func (u *objectUseCase) Copy(ctx context.Context, id int64, creatorID uuid.UUID, input *CopyInput) (*entity.ObjectResponse, error) {
+func (u *objectUseCase) Copy(ctx context.Context, id int64, creatorID uuid.UUID, appID, email string, input *CopyInput) (*entity.ObjectResponse, error) {
 	obj, err := u.objectRepo.GetByID(ctx, id)
 	if err != nil {
 		if apperrors.IsNotFound(err) {
@@ -817,8 +819,8 @@ func (u *objectUseCase) Copy(ctx context.Context, id int64, creatorID uuid.UUID,
 		newPath = parent.Path + "/" + newName
 		parentID = input.TargetParentID
 	} else {
-		// When copying to root, use user's directory
-		userDir := "/" + creatorID.String()
+		// When copying to root, use user's directory: /{appID}/{email}
+		userDir := "/" + appID + "/" + email
 		newPath = userDir + "/" + newName
 		parentID = nil
 	}

@@ -50,6 +50,7 @@ func RegisterRoutes(router *gin.Engine, handlers *Handlers, jwtManager *jwt.JWTM
 			users.GET("/me", handlers.User.GetMe)
 			users.PUT("/me", handlers.User.UpdateMe)
 			users.PUT("/me/password", handlers.Auth.ChangePassword)
+			users.GET("/app", handlers.User.ListByAppID)
 		}
 
 		// Object routes
@@ -67,6 +68,7 @@ func RegisterRoutes(router *gin.Engine, handlers *Handlers, jwtManager *jwt.JWTM
 			objects.PATCH("/:id/notebook", handlers.Object.PatchNotebook)
 			objects.POST("/:id/move", handlers.Object.Move)
 			objects.POST("/:id/copy", handlers.Object.Copy)
+			objects.GET("/:id/download", handlers.Object.Download)
 		}
 
 		// Permission routes

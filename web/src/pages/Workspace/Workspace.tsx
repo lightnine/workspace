@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { 
   Folder, 
@@ -7,7 +7,11 @@ import {
   FileCode,
   FileText,
   Database,
-  File
+  File,
+  History,
+  ChevronDown,
+  PanelRightClose,
+  PanelRightOpen
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,17 +32,50 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
-import { Explorer } from '../../components/Explorer/Explorer';
+import { cn } from '@/lib/utils';
+import { UserDirectoryTree } from '../../components/Explorer/UserDirectoryTree';
 import { TabView } from '../../components/TabView/TabView';
 import { MonacoEditor } from '../../components/Editor/MonacoEditor';
+import { FileDetailsPanel } from '../../components/FileDetails/FileDetailsPanel';
 import { useWorkspace, CreateFileType, FILE_TYPE_CONFIG } from '../../context/WorkspaceContext';
+import { useEditor } from '../../context/EditorContext';
+import { useApp } from '../../context/AppContext';
+import { FileItem } from '../../types';
+import { getObjectById } from '../../services/api';
 
 export const Workspace: React.FC = () => {
   const { t } = useTranslation();
-  const { createDialog, openCreateDialog, closeCreateDialog, handleCreate: contextHandleCreate } = useWorkspace();
+  const { 
+    createDialog, 
+    openCreateDialog, 
+    closeCreateDialog, 
+    handleCreate: contextHandleCreate,
+    refreshFileTree
+  } = useWorkspace();
+  const { activeTab } = useEditor();
+  const { user: currentUser } = useApp();
 
   const [newName, setNewName] = useState('');
+  const [showDetailsPanel, setShowDetailsPanel] = useState(false);
+  const [currentFileDetails, setCurrentFileDetails] = useState<FileItem | null>(null);
+
+  // Load file details when active tab changes
+  useEffect(() => {
+    const loadFileDetails = async () => {
+      if (activeTab?.fileId) {
+        try {
+          const fileData = await getObjectById(activeTab.fileId);
+          setCurrentFileDetails(fileData);
+        } catch (error) {
+          console.error('Failed to load file details:', error);
+          setCurrentFileDetails(null);
+        }
+      } else {
+        setCurrentFileDetails(null);
+      }
+    };
+    loadFileDetails();
+  }, [activeTab?.fileId]);
 
   const handleCreateClick = (type: CreateFileType) => {
     openCreateDialog(type);
@@ -86,27 +123,40 @@ export const Workspace: React.FC = () => {
     setNewName('');
   };
 
+  const handleSelectUserDirectory = (userEmail: string) => {
+    // In the future, this could filter the file tree to show only that user's files
+    console.log('Selected user directory:', userEmail);
+  };
+
+  const handleToggleDetailsPanel = () => {
+    setShowDetailsPanel(!showDetailsPanel);
+  };
+
+  const handleVersionRestore = async () => {
+    // Refresh the file content after restore
+    await refreshFileTree();
+    // Reload current file details
+    if (activeTab?.fileId) {
+      const fileData = await getObjectById(activeTab.fileId);
+      setCurrentFileDetails(fileData);
+    }
+  };
+
   return (
     <div className="flex h-[calc(100vh-56px)] overflow-hidden">
-      {/* Left: File Explorer */}
+      {/* Left: File Explorer with User Directory Tree */}
       <div className="w-[280px] min-w-[280px] hidden sm:flex flex-col border-r border-border bg-background">
-        <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Folder className="w-5 h-5 text-amber-500" />
-            <span className="font-semibold text-sm">{t('workspace.fileExplorer')}</span>
-          </div>
+        {/* Workspace header with dropdown */}
+        <div className="px-3 py-2 border-b border-border flex items-center justify-between">
           <DropdownMenu>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <DropdownMenuTrigger asChild>
-                  <Button size="icon" className="h-7 w-7">
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-              </TooltipTrigger>
-              <TooltipContent>{t('common.newFile')}</TooltipContent>
-            </Tooltip>
-            <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="h-8 px-2 gap-1 font-semibold text-sm">
+                <Folder className="w-4 h-4 text-amber-500" />
+                <span>Workspace</span>
+                <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-48">
               <DropdownMenuItem onClick={() => handleCreateClick('notebook')}>
                 <FileCode className="w-4 h-4 mr-2 text-orange-500" />
                 {t('workspace.newNotebook')}
@@ -119,34 +169,103 @@ export const Workspace: React.FC = () => {
                 <Database className="w-4 h-4 mr-2 text-amber-600" />
                 {t('workspace.newSql')}
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleCreateClick('markdown')}>
-                <FileText className="w-4 h-4 mr-2 text-purple-500" />
-                {t('workspace.newMarkdown')}
-              </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => handleCreateClick('file')}>
-                <File className="w-4 h-4 mr-2" />
-                {t('common.newFile')}
-              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => handleCreateClick('directory')}>
                 <FolderPlus className="w-4 h-4 mr-2 text-amber-500" />
                 {t('common.newFolder')}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          
+          <div className="flex items-center gap-1">
+            {/* Toggle Details Panel */}
+            {activeTab && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className={cn(
+                      "h-7 w-7",
+                      showDetailsPanel && "bg-primary/10"
+                    )}
+                    onClick={handleToggleDetailsPanel}
+                  >
+                    {showDetailsPanel ? (
+                      <PanelRightClose className="h-4 w-4" />
+                    ) : (
+                      <PanelRightOpen className="h-4 w-4" />
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {showDetailsPanel ? t('common.close') : t('fileDetails.title')}
+                </TooltipContent>
+              </Tooltip>
+            )}
+            <DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="icon" className="h-7 w-7">
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent>{t('common.newFile')}</TooltipContent>
+              </Tooltip>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onClick={() => handleCreateClick('notebook')}>
+                  <FileCode className="w-4 h-4 mr-2 text-orange-500" />
+                  {t('workspace.newNotebook')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleCreateClick('python')}>
+                  <FileText className="w-4 h-4 mr-2 text-blue-500" />
+                  {t('workspace.newPython')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleCreateClick('sql')}>
+                  <Database className="w-4 h-4 mr-2 text-amber-600" />
+                  {t('workspace.newSql')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleCreateClick('markdown')}>
+                  <FileText className="w-4 h-4 mr-2 text-purple-500" />
+                  {t('workspace.newMarkdown')}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => handleCreateClick('file')}>
+                  <File className="w-4 h-4 mr-2" />
+                  {t('common.newFile')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleCreateClick('directory')}>
+                  <FolderPlus className="w-4 h-4 mr-2 text-amber-500" />
+                  {t('common.newFolder')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
         <ScrollArea className="flex-1">
-          <Explorer />
+          {/* User Directory Tree with File Explorer (like Databricks) */}
+          <UserDirectoryTree onSelectUserDirectory={handleSelectUserDirectory} />
         </ScrollArea>
       </div>
 
-      {/* Right: Editor Area */}
+      {/* Center: Editor Area */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <TabView />
         <div className="flex-1 overflow-hidden min-h-0">
           <MonacoEditor height="100%" />
         </div>
       </div>
+
+      {/* Right: File Details Panel */}
+      {showDetailsPanel && activeTab && (
+        <FileDetailsPanel
+          file={currentFileDetails}
+          onClose={() => setShowDetailsPanel(false)}
+          onVersionRestore={handleVersionRestore}
+        />
+      )}
 
       {/* Create Dialog */}
       <Dialog open={createDialog.open} onOpenChange={handleCloseDialog}>

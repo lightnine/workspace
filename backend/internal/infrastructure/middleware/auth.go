@@ -17,6 +17,8 @@ const (
 	BearerPrefix = "Bearer "
 	// ContextUserID is the context key for user ID
 	ContextUserID = "user_id"
+	// ContextAppID is the context key for app ID (application ID)
+	ContextAppID = "app_id"
 	// ContextUsername is the context key for username
 	ContextUsername = "username"
 	// ContextEmail is the context key for email
@@ -54,6 +56,7 @@ func AuthMiddleware(jwtManager *jwt.JWTManager) gin.HandlerFunc {
 
 		// Set user info in context
 		c.Set(ContextUserID, claims.UserID)
+		c.Set(ContextAppID, claims.AppID)
 		c.Set(ContextUsername, claims.Username)
 		c.Set(ContextEmail, claims.Email)
 
@@ -68,6 +71,15 @@ func GetUserID(c *gin.Context) string {
 		return ""
 	}
 	return userID.(string)
+}
+
+// GetAppID retrieves the app ID (application ID) from context
+func GetAppID(c *gin.Context) string {
+	appID, exists := c.Get(ContextAppID)
+	if !exists {
+		return ""
+	}
+	return appID.(string)
 }
 
 // GetUsername retrieves the username from context

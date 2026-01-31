@@ -75,12 +75,20 @@ interface WorkspaceContextType {
   openCreateDialog: (type: CreateFileType) => void;
   closeCreateDialog: () => void;
   handleCreate: (name: string) => Promise<void>;
+  // 用户目录相关
+  selectedUserEmail: string | undefined;
+  setSelectedUserEmail: (email: string | undefined) => void;
+  // 版本历史相关
+  showVersionHistory: boolean;
+  setShowVersionHistory: (show: boolean) => void;
+  versionHistoryObjectId: number | null;
+  setVersionHistoryObjectId: (id: number | null) => void;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefined);
 
 export const WorkspaceProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const { isAuthenticated } = useApp();
+  const { isAuthenticated, user } = useApp();
   const [fileTree, setFileTree] = useState<FileItem[]>([]);
   const [expandedNodes, setExpandedNodes] = useState<Set<number>>(new Set());
   const [selectedNodeId, setSelectedNodeId] = useState<number | null>(null);
@@ -88,6 +96,20 @@ export const WorkspaceProvider: React.FC<{ children: ReactNode }> = ({ children 
   
   // 创建对话框状态
   const [createDialog, setCreateDialog] = useState<CreateDialogState>({ open: false, type: null });
+  
+  // 用户目录选择状态
+  const [selectedUserEmail, setSelectedUserEmail] = useState<string | undefined>(undefined);
+  
+  // 版本历史状态
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
+  const [versionHistoryObjectId, setVersionHistoryObjectId] = useState<number | null>(null);
+
+  // 设置初始用户 email
+  useEffect(() => {
+    if (user?.email && !selectedUserEmail) {
+      setSelectedUserEmail(user.email);
+    }
+  }, [user?.email]);
 
   const refreshFileTree = async () => {
     // 只有登录后才加载文件树
@@ -171,7 +193,13 @@ export const WorkspaceProvider: React.FC<{ children: ReactNode }> = ({ children 
         createDialog,
         openCreateDialog,
         closeCreateDialog,
-        handleCreate
+        handleCreate,
+        selectedUserEmail,
+        setSelectedUserEmail,
+        showVersionHistory,
+        setShowVersionHistory,
+        versionHistoryObjectId,
+        setVersionHistoryObjectId
       }}
     >
       {children}

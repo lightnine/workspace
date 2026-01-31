@@ -18,6 +18,7 @@ var (
 // Claims represents the JWT claims
 type Claims struct {
 	UserID   string `json:"user_id"`
+	AppID    string `json:"app_id"`
 	Username string `json:"username"`
 	Email    string `json:"email"`
 	jwt.RegisteredClaims
@@ -49,8 +50,8 @@ func NewJWTManager(secret string, accessExpiry, refreshExpiry time.Duration, iss
 }
 
 // GenerateTokenPair generates both access and refresh tokens
-func (m *JWTManager) GenerateTokenPair(userID, username, email string) (*TokenPair, error) {
-	accessToken, err := m.generateAccessToken(userID, username, email)
+func (m *JWTManager) GenerateTokenPair(userID, appID, username, email string) (*TokenPair, error) {
+	accessToken, err := m.generateAccessToken(userID, appID, username, email)
 	if err != nil {
 		return nil, err
 	}
@@ -65,10 +66,11 @@ func (m *JWTManager) GenerateTokenPair(userID, username, email string) (*TokenPa
 }
 
 // generateAccessToken generates a new access token
-func (m *JWTManager) generateAccessToken(userID, username, email string) (string, error) {
+func (m *JWTManager) generateAccessToken(userID, appID, username, email string) (string, error) {
 	now := time.Now()
 	claims := Claims{
 		UserID:   userID,
+		AppID:    appID,
 		Username: username,
 		Email:    email,
 		RegisteredClaims: jwt.RegisteredClaims{

@@ -77,3 +77,27 @@ func (h *UserHandler) UpdateMe(c *gin.Context) {
 
 	response.Success(c, userResp)
 }
+
+// ListByAppID godoc
+// @Summary List all users in the current app
+// @Tags users
+// @Security BearerAuth
+// @Produce json
+// @Success 200 {object} response.Response{data=[]entity.UserResponse}
+// @Failure 401 {object} response.Response
+// @Router /api/v1/users/app [get]
+func (h *UserHandler) ListByAppID(c *gin.Context) {
+	appID := middleware.GetAppID(c)
+	if appID == "" {
+		response.Unauthorized(c, "app ID not found")
+		return
+	}
+
+	users, err := h.userUseCase.GetByAppID(c.Request.Context(), appID)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+
+	response.Success(c, users)
+}

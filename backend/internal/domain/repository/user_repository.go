@@ -22,6 +22,9 @@ type UserRepository interface {
 	// GetByUsername retrieves a user by username
 	GetByUsername(ctx context.Context, username string) (*entity.User, error)
 
+	// GetByAppID retrieves all users by app ID
+	GetByAppID(ctx context.Context, appID string) ([]*entity.User, error)
+
 	// Update updates a user
 	Update(ctx context.Context, user *entity.User) error
 

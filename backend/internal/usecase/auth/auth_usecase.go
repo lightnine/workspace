@@ -27,6 +27,7 @@ type UseCase interface {
 
 // RegisterInput represents registration input data
 type RegisterInput struct {
+	AppID       string `json:"app_id" binding:"required"`
 	Username    string `json:"username" binding:"required,min=3,max=50"`
 	Email       string `json:"email" binding:"required,email"`
 	Password    string `json:"password" binding:"required,min=8"`
@@ -70,8 +71,18 @@ func NewUseCase(
 }
 
 // ensureUserDirectory creates the user's workspace directory if it doesn't exist
-func (u *authUseCase) ensureUserDirectory(userID uuid.UUID) error {
-	userDir := filepath.Join(u.storageConfig.BasePath, userID.String())
+// Directory structure: /{appId}/{email}/
+func (u *authUseCase) ensureUserDirectory(appID, email string) error {
+	// Create app directory first: basePath/{appId}
+	appDir := filepath.Join(u.storageConfig.BasePath, appID)
+	if _, err := os.Stat(appDir); os.IsNotExist(err) {
+		if err := os.MkdirAll(appDir, 0755); err != nil {
+			return err
+		}
+	}
+	
+	// Create user directory: basePath/{appId}/{email}
+	userDir := filepath.Join(appDir, email)
 	if _, err := os.Stat(userDir); os.IsNotExist(err) {
 		if err := os.MkdirAll(userDir, 0755); err != nil {
 			return err
@@ -108,6 +119,7 @@ func (u *authUseCase) Register(ctx context.Context, input *RegisterInput) (*Auth
 	// Create user
 	user := &entity.User{
 		ID:           uuid.New(),
+		AppID:        input.AppID,
 		Username:     input.Username,
 		Email:        input.Email,
 		PasswordHash: string(passwordHash),
@@ -119,13 +131,13 @@ func (u *authUseCase) Register(ctx context.Context, input *RegisterInput) (*Auth
 		return nil, apperrors.InternalError("failed to create user", err)
 	}
 
-	// Create user workspace directory
-	if err := u.ensureUserDirectory(user.ID); err != nil {
+	// Create user workspace directory: /{appId}/{email}/
+	if err := u.ensureUserDirectory(user.AppID, user.Email); err != nil {
 		return nil, apperrors.InternalError("failed to create user directory", err)
 	}
 
 	// Generate tokens
-	tokenPair, err := u.jwtManager.GenerateTokenPair(user.ID.String(), user.Username, user.Email)
+	tokenPair, err := u.jwtManager.GenerateTokenPair(user.ID.String(), user.AppID, user.Username, user.Email)
 	if err != nil {
 		return nil, apperrors.InternalError("failed to generate tokens", err)
 	}
@@ -170,13 +182,13 @@ func (u *authUseCase) Login(ctx context.Context, input *LoginInput) (*AuthOutput
 		return nil, apperrors.UnauthorizedError("invalid credentials")
 	}
 
-	// Ensure user workspace directory exists
-	if err := u.ensureUserDirectory(user.ID); err != nil {
+	// Ensure user workspace directory exists: /{appId}/{email}/
+	if err := u.ensureUserDirectory(user.AppID, user.Email); err != nil {
 		return nil, apperrors.InternalError("failed to create user directory", err)
 	}
 
 	// Generate tokens
-	tokenPair, err := u.jwtManager.GenerateTokenPair(user.ID.String(), user.Username, user.Email)
+	tokenPair, err := u.jwtManager.GenerateTokenPair(user.ID.String(), user.AppID, user.Username, user.Email)
 	if err != nil {
 		return nil, apperrors.InternalError("failed to generate tokens", err)
 	}
@@ -229,7 +241,7 @@ func (u *authUseCase) RefreshToken(ctx context.Context, refreshToken string) (*A
 	}
 
 	// Generate new tokens
-	tokenPair, err := u.jwtManager.GenerateTokenPair(user.ID.String(), user.Username, user.Email)
+	tokenPair, err := u.jwtManager.GenerateTokenPair(user.ID.String(), user.AppID, user.Username, user.Email)
 	if err != nil {
 		return nil, apperrors.InternalError("failed to generate tokens", err)
 	}

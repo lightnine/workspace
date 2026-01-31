@@ -22,6 +22,7 @@ export const AuthPage: React.FC = () => {
   const [loginPassword, setLoginPassword] = useState('');
 
   // Register form state
+  const [registerAppId, setRegisterAppId] = useState('');
   const [registerUsername, setRegisterUsername] = useState('');
   const [registerEmail, setRegisterEmail] = useState('');
   const [registerPassword, setRegisterPassword] = useState('');
@@ -48,6 +49,7 @@ export const AuthPage: React.FC = () => {
 
     try {
       const authData = await registerApi({
+        app_id: registerAppId,
         username: registerUsername,
         email: registerEmail,
         password: registerPassword,
@@ -122,6 +124,17 @@ export const AuthPage: React.FC = () => {
             {/* Register Form */}
             <TabsContent value="register">
               <form onSubmit={handleRegister} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="register-appid">{t('auth.appId')}</Label>
+                  <Input
+                    id="register-appid"
+                    value={registerAppId}
+                    onChange={(e) => setRegisterAppId(e.target.value)}
+                    required
+                    placeholder="e.g., myapp001"
+                  />
+                  <p className="text-xs text-muted-foreground">{t('auth.appIdHint')}</p>
+                </div>
                 <div className="space-y-2">
                   <Label htmlFor="register-username">{t('auth.username')}</Label>
                   <Input

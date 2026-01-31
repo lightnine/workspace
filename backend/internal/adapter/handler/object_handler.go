@@ -43,13 +43,20 @@ func (h *ObjectHandler) CreateDirectory(c *gin.Context) {
 		return
 	}
 
+	appID := middleware.GetAppID(c)
+	email := middleware.GetEmail(c)
+	if appID == "" || email == "" {
+		response.Unauthorized(c, "missing app ID or email")
+		return
+	}
+
 	var input object.CreateDirectoryInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}
 
-	obj, err := h.objectUseCase.CreateDirectory(c.Request.Context(), userID, &input)
+	obj, err := h.objectUseCase.CreateDirectory(c.Request.Context(), userID, appID, email, &input)
 	if err != nil {
 		handleError(c, err)
 		return
@@ -79,6 +86,13 @@ func (h *ObjectHandler) CreateFile(c *gin.Context) {
 	userID, err := uuid.Parse(userIDStr)
 	if err != nil {
 		response.Unauthorized(c, "invalid user ID")
+		return
+	}
+
+	appID := middleware.GetAppID(c)
+	email := middleware.GetEmail(c)
+	if appID == "" || email == "" {
+		response.Unauthorized(c, "missing app ID or email")
 		return
 	}
 
@@ -125,7 +139,7 @@ func (h *ObjectHandler) CreateFile(c *gin.Context) {
 		Content:     content,
 	}
 
-	obj, err := h.objectUseCase.CreateFile(c.Request.Context(), userID, input)
+	obj, err := h.objectUseCase.CreateFile(c.Request.Context(), userID, appID, email, input)
 	if err != nil {
 		handleError(c, err)
 		return
@@ -237,6 +251,13 @@ func (h *ObjectHandler) GetTree(c *gin.Context) {
 		return
 	}
 
+	appID := middleware.GetAppID(c)
+	email := middleware.GetEmail(c)
+	if appID == "" || email == "" {
+		response.Unauthorized(c, "missing app ID or email")
+		return
+	}
+
 	depth := 3
 	if depthStr := c.Query("depth"); depthStr != "" {
 		if d, err := strconv.Atoi(depthStr); err == nil && d > 0 && d <= 10 {
@@ -244,7 +265,7 @@ func (h *ObjectHandler) GetTree(c *gin.Context) {
 		}
 	}
 
-	tree, err := h.objectUseCase.GetTree(c.Request.Context(), userID, depth)
+	tree, err := h.objectUseCase.GetTree(c.Request.Context(), userID, appID, email, depth)
 	if err != nil {
 		handleError(c, err)
 		return
@@ -278,6 +299,44 @@ func (h *ObjectHandler) GetContent(c *gin.Context) {
 		return
 	}
 
+	c.Data(200, "application/octet-stream", content)
+}
+
+// Download godoc
+// @Summary Download file
+// @Tags objects
+// @Security BearerAuth
+// @Produce octet-stream
+// @Param id path int true "Object ID"
+// @Success 200 {file} binary
+// @Failure 400 {object} response.Response
+// @Failure 401 {object} response.Response
+// @Failure 404 {object} response.Response
+// @Router /api/v1/objects/{id}/download [get]
+func (h *ObjectHandler) Download(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		response.BadRequest(c, "invalid object ID")
+		return
+	}
+
+	obj, err := h.objectUseCase.GetByID(c.Request.Context(), id)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+
+	content, err := h.objectUseCase.GetContent(c.Request.Context(), id)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+
+	// Set Content-Disposition header for file download
+	c.Header("Content-Disposition", "attachment; filename=\""+obj.Name+"\"")
+	c.Header("Content-Type", "application/octet-stream")
+	c.Header("Content-Length", strconv.Itoa(len(content)))
 	c.Data(200, "application/octet-stream", content)
 }
 
@@ -467,6 +526,13 @@ func (h *ObjectHandler) Move(c *gin.Context) {
 		return
 	}
 
+	appID := middleware.GetAppID(c)
+	email := middleware.GetEmail(c)
+	if appID == "" || email == "" {
+		response.Unauthorized(c, "missing app ID or email")
+		return
+	}
+
 	idStr := c.Param("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
@@ -480,8 +546,10 @@ func (h *ObjectHandler) Move(c *gin.Context) {
 		return
 	}
 
-	// Set user ID from middleware
+	// Set user info from middleware
 	input.UserID = userID
+	input.AppID = appID
+	input.Email = email
 
 	obj, err := h.objectUseCase.Move(c.Request.Context(), id, &input)
 	if err != nil {
@@ -513,6 +581,13 @@ func (h *ObjectHandler) Copy(c *gin.Context) {
 		return
 	}
 
+	appID := middleware.GetAppID(c)
+	email := middleware.GetEmail(c)
+	if appID == "" || email == "" {
+		response.Unauthorized(c, "missing app ID or email")
+		return
+	}
+
 	idStr := c.Param("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
@@ -526,7 +601,7 @@ func (h *ObjectHandler) Copy(c *gin.Context) {
 		return
 	}
 
-	obj, err := h.objectUseCase.Copy(c.Request.Context(), id, userID, &input)
+	obj, err := h.objectUseCase.Copy(c.Request.Context(), id, userID, appID, email, &input)
 	if err != nil {
 		handleError(c, err)
 		return

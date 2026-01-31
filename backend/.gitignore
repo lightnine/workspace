@@ -1,0 +1,28 @@
+# Air 热重载临时目录
+tmp/
+build-errors.log
+
+# 编译产物
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+main
+
+# 测试覆盖率
+*.out
+coverage.html
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 日志
+*.log
+
+# 环境变量文件
+.env
+.env.local

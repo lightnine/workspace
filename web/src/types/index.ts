@@ -22,6 +22,7 @@ export interface FileItem {
 // 用户信息（匹配后端 UserResponse）
 export interface UserResponse {
   id: string; // UUID
+  app_id?: string;
   username: string;
   email: string;
   display_name?: string;
@@ -91,6 +92,7 @@ export interface LoginInput {
 }
 
 export interface RegisterInput {
+  app_id: string;
   username: string;
   email: string;
   password: string;

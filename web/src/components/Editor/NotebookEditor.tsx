@@ -93,6 +93,31 @@ interface NotebookCell {
   id?: string;
 }
 
+// Supported languages for code cells
+type CellLanguage = 'python' | 'sql' | 'r' | 'scala' | 'markdown';
+
+interface LanguageConfig {
+  id: CellLanguage;
+  name: string;
+  monacoLanguage: string;
+  icon: string;
+  color: string;
+}
+
+const SUPPORTED_LANGUAGES: LanguageConfig[] = [
+  { id: 'python', name: 'Python', monacoLanguage: 'python', icon: 'Py', color: 'bg-blue-500' },
+  { id: 'sql', name: 'SQL', monacoLanguage: 'sql', icon: 'SQL', color: 'bg-orange-500' },
+  { id: 'r', name: 'R', monacoLanguage: 'r', icon: 'R', color: 'bg-sky-500' },
+  { id: 'scala', name: 'Scala', monacoLanguage: 'scala', icon: 'Sc', color: 'bg-red-500' },
+  { id: 'markdown', name: 'Markdown', monacoLanguage: 'markdown', icon: 'MD', color: 'bg-purple-500' },
+];
+
+const getLanguageConfig = (lang: string): LanguageConfig => {
+  const normalizedLang = lang.toLowerCase();
+  return SUPPORTED_LANGUAGES.find(l => l.id === normalizedLang || l.monacoLanguage === normalizedLang) 
+    || SUPPORTED_LANGUAGES[0]; // default to Python
+};
+
 interface NotebookOutput {
   output_type: 'stream' | 'execute_result' | 'display_data' | 'error';
   text?: string | string[];
@@ -240,6 +265,7 @@ interface CellProps {
   onInsertAbove: (type?: 'code' | 'markdown') => void;
   onInsertBelow: (type?: 'code' | 'markdown') => void;
   onChangeType: (type: 'code' | 'markdown') => void;
+  onChangeLanguage: (language: CellLanguage) => void;
   onClearOutput: () => void;
   canMoveUp: boolean;
   canMoveDown: boolean;
@@ -265,6 +291,7 @@ const NotebookCellComponent: React.FC<CellProps> = ({
   onInsertAbove,
   onInsertBelow,
   onChangeType,
+  onChangeLanguage,
   onClearOutput,
   canMoveUp,
   canMoveDown,
@@ -286,6 +313,10 @@ const NotebookCellComponent: React.FC<CellProps> = ({
   const hasError = hasErrorOutput(outputs);
   const hasOutput = outputs.length > 0;
   const executionCount = cell.execution_count;
+  
+  // Get cell-specific language (from metadata) or default notebook language
+  const cellLanguage = cell.metadata?.language || language;
+  const langConfig = getLanguageConfig(cellLanguage);
 
   const handleEditorDidMount = (editor: any) => {
     editorRef.current = editor;
@@ -387,6 +418,47 @@ const NotebookCellComponent: React.FC<CellProps> = ({
               (isHovered || isActive) ? 'opacity-100' : 'opacity-0'
             )}
           >
+            {/* Language selector for code cells */}
+            {isCodeCell && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={cn(
+                      'h-5.5 px-2 text-[11px] font-medium rounded mr-1',
+                      langConfig.color,
+                      'text-white hover:opacity-90'
+                    )}
+                    disabled={readOnly}
+                  >
+                    {langConfig.icon}
+                    <ChevronDown className="w-3 h-3 ml-1" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-32">
+                  {SUPPORTED_LANGUAGES.map((lang) => (
+                    <DropdownMenuItem
+                      key={lang.id}
+                      onClick={() => onChangeLanguage(lang.id)}
+                      className={cn(
+                        'flex items-center gap-2',
+                        cellLanguage === lang.id && 'bg-accent'
+                      )}
+                    >
+                      <span className={cn(
+                        'w-5 h-5 rounded text-[10px] font-bold flex items-center justify-center text-white',
+                        lang.color
+                      )}>
+                        {lang.icon}
+                      </span>
+                      {lang.name}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+
             {/* Type toggle */}
             <div className="flex mr-1">
               <TooltipProvider>
@@ -561,9 +633,22 @@ const NotebookCellComponent: React.FC<CellProps> = ({
             {isCodeCell ? (
               // Code editor
               <div className="[&_.monaco-editor]:pt-0.5 [&_.monaco-editor_.margin]:!bg-transparent">
+                {/* Language indicator */}
+                <div className={cn(
+                  'flex items-center gap-1 px-2 py-0.5 border-b',
+                  isDarkMode ? 'border-white/10 bg-black/20' : 'border-black/5 bg-black/5'
+                )}>
+                  <span className={cn(
+                    'w-4 h-4 rounded text-[9px] font-bold flex items-center justify-center text-white',
+                    langConfig.color
+                  )}>
+                    {langConfig.icon}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground">{langConfig.name}</span>
+                </div>
                 <Editor
                   height={editorHeight}
-                  language={language}
+                  language={langConfig.monacoLanguage}
                   value={source}
                   onChange={handleEditorChange}
                   onMount={handleEditorDidMount}
@@ -1152,6 +1237,28 @@ export const NotebookEditor: React.FC<NotebookEditorProps> = ({
     updateNotebook(newCells);
   }, [cells, updateNotebook, addPendingOperation]);
 
+  const handleChangeLanguage = useCallback((index: number, newLanguage: CellLanguage) => {
+    const newCells = [...cells];
+    const cell = newCells[index];
+    newCells[index] = {
+      ...cell,
+      metadata: {
+        ...cell.metadata,
+        language: newLanguage
+      }
+    };
+    
+    if (cell.id) {
+      addPendingOperation({
+        op: 'update',
+        cell_id: cell.id,
+        cell: { ...newCells[index], source: textToArray(normalizeText(newCells[index].source)) }
+      });
+    }
+    
+    updateNotebook(newCells);
+  }, [cells, updateNotebook, addPendingOperation]);
+
   const handleClearOutput = useCallback((index: number) => {
     const newCells = [...cells];
     const cell = newCells[index];
@@ -1546,6 +1653,7 @@ export const NotebookEditor: React.FC<NotebookEditorProps> = ({
             onInsertAbove={(type) => handleInsertAbove(index, type)}
             onInsertBelow={(type) => handleInsertBelow(index, type)}
             onChangeType={(type) => handleChangeType(index, type)}
+            onChangeLanguage={(lang) => handleChangeLanguage(index, lang)}
             onClearOutput={() => handleClearOutput(index)}
             canMoveUp={index > 0}
             canMoveDown={index < cells.length - 1}

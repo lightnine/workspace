@@ -6,6 +6,7 @@ import { getFileContent, saveFileContent, patchNotebook, CellOperation, addRecen
 interface EditorContextType {
   tabs: Tab[];
   activeTabId: string | null;
+  activeTab: Tab | null;
   setActiveTabId: (id: string | null) => void;
   openFile: (file: FileItem) => Promise<void>;
   closeTab: (tabId: string) => void;
@@ -21,6 +22,9 @@ export const EditorProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const { t } = useTranslation();
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  
+  // 计算 activeTab
+  const activeTab = tabs.find(tab => tab.id === activeTabId) || null;
   
   // 跟踪正在打开的文件 ID，防止重复打开
   const openingFilesRef = useRef<Set<number>>(new Set());
@@ -159,6 +163,7 @@ export const EditorProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       value={{
         tabs,
         activeTabId,
+        activeTab,
         setActiveTabId,
         openFile,
         closeTab,

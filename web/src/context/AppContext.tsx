@@ -16,6 +16,7 @@ interface AppContextType {
   language: Language;
   setLanguage: (lang: Language) => void;
   isAuthenticated: boolean;
+  currentAppId: string | null;
   login: (input: LoginInput) => Promise<void>;
   logout: () => void;
 }
@@ -107,6 +108,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       language, 
       setLanguage,
       isAuthenticated,
+      currentAppId: user?.app_id || null,
       login,
       logout
     }}>

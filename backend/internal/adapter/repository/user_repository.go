@@ -16,6 +16,7 @@ import (
 // UserModel is the Gorm model for users table
 type UserModel struct {
 	ID           uuid.UUID `gorm:"type:uuid;primaryKey"`
+	AppID        string    `gorm:"column:app_id;size:100;not null;index"`
 	Username     string    `gorm:"uniqueIndex;size:50;not null"`
 	Email        string    `gorm:"uniqueIndex;size:255;not null"`
 	PasswordHash string    `gorm:"size:255;not null"`
@@ -35,6 +36,7 @@ func (UserModel) TableName() string {
 func (m *UserModel) ToEntity() *entity.User {
 	return &entity.User{
 		ID:           m.ID,
+		AppID:        m.AppID,
 		Username:     m.Username,
 		Email:        m.Email,
 		PasswordHash: m.PasswordHash,
@@ -50,6 +52,7 @@ func (m *UserModel) ToEntity() *entity.User {
 func UserModelFromEntity(u *entity.User) *UserModel {
 	return &UserModel{
 		ID:           u.ID,
+		AppID:        u.AppID,
 		Username:     u.Username,
 		Email:        u.Email,
 		PasswordHash: u.PasswordHash,
@@ -170,6 +173,18 @@ func (r *userRepository) ExistsByUsername(ctx context.Context, username string) 
 		return false, err
 	}
 	return count > 0, nil
+}
+
+func (r *userRepository) GetByAppID(ctx context.Context, appID string) ([]*entity.User, error) {
+	var models []UserModel
+	if err := r.db.WithContext(ctx).Where("app_id = ?", appID).Find(&models).Error; err != nil {
+		return nil, err
+	}
+	users := make([]*entity.User, len(models))
+	for i := range models {
+		users[i] = models[i].ToEntity()
+	}
+	return users, nil
 }
 
 // refreshTokenRepository implements repository.RefreshTokenRepository

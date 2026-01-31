@@ -16,7 +16,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
       <Sidebar />
 
       {/* Main content */}
-      <main className="flex-1 pt-14 pl-[220px] overflow-hidden">
+      <main className="flex-1 pt-14 pl-[200px] overflow-hidden">
         {children}
       </main>
     </div>

@@ -1,0 +1,64 @@
+# Air 热重载配置
+# https://github.com/air-verse/air
+
+root = "."
+tmp_dir = "tmp"
+
+[build]
+# 编译命令
+cmd = "go build -o ./tmp/main ./cmd/server/main.go"
+# 编译后执行的二进制文件
+bin = "./tmp/main"
+# 监听文件变化时执行的命令（可选）
+full_bin = "./tmp/main"
+# 监听以下文件扩展名的变化
+include_ext = ["go", "tpl", "tmpl", "html", "yaml", "yml"]
+# 排除以下目录
+exclude_dir = ["assets", "tmp", "vendor", "testdata", "node_modules"]
+# 排除以下文件
+exclude_file = []
+# 排除正则匹配的文件
+exclude_regex = ["_test.go", ".*_test\\.go"]
+# 排除不变的目录
+exclude_unchanged = false
+# 监听 git 忽略的文件
+follow_symlink = false
+# 日志目录
+log = "build-errors.log"
+# 文件变化后延迟多少毫秒再重新编译
+delay = 1000
+# 发生编译错误时是否停止旧的二进制文件
+stop_on_error = true
+# 发送中断信号而不是 kill 信号
+send_interrupt = true
+# 发送中断信号后延迟多少毫秒再 kill
+kill_delay = 500
+# 是否重用端口
+rerun = false
+# 重用延迟
+rerun_delay = 500
+# 命令执行参数
+args_bin = []
+
+[log]
+# 显示日志时间
+time = true
+# 只显示主日志
+main_only = false
+
+[color]
+# 自定义日志颜色
+main = "magenta"
+watcher = "cyan"
+build = "yellow"
+runner = "green"
+
+[misc]
+# 退出时删除 tmp 目录
+clean_on_exit = true
+
+[screen]
+# 重新启动时是否清屏
+clear_on_rebuild = false
+# 保持滚动位置
+keep_scroll = true

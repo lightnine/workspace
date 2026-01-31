@@ -14,6 +14,7 @@ import (
 type UseCase interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*entity.UserResponse, error)
 	GetByEmail(ctx context.Context, email string) (*entity.UserResponse, error)
+	GetByAppID(ctx context.Context, appID string) ([]*entity.UserResponse, error)
 	Update(ctx context.Context, id uuid.UUID, input *UpdateInput) (*entity.UserResponse, error)
 }
 
@@ -52,6 +53,18 @@ func (u *userUseCase) GetByEmail(ctx context.Context, email string) (*entity.Use
 		return nil, apperrors.InternalError("failed to get user", err)
 	}
 	return user.ToResponse(), nil
+}
+
+func (u *userUseCase) GetByAppID(ctx context.Context, appID string) ([]*entity.UserResponse, error) {
+	users, err := u.userRepo.GetByAppID(ctx, appID)
+	if err != nil {
+		return nil, apperrors.InternalError("failed to get users by app ID", err)
+	}
+	responses := make([]*entity.UserResponse, len(users))
+	for i, user := range users {
+		responses[i] = user.ToResponse()
+	}
+	return responses, nil
 }
 
 func (u *userUseCase) Update(ctx context.Context, id uuid.UUID, input *UpdateInput) (*entity.UserResponse, error) {
