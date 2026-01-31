@@ -161,10 +161,17 @@ export const WorkspaceProvider: React.FC<{ children: ReactNode }> = ({ children 
         const fullName = getFullFileName(name, createDialog.type);
         await createFile(fullName, config.defaultContent);
       }
-      await refreshFileTree();
+      
+      // 先关闭对话框，避免 Radix UI Dialog 的焦点管理问题导致页面卡死
       closeCreateDialog();
+      
+      // 使用 requestAnimationFrame 确保 Dialog 完全关闭后再刷新文件树
+      requestAnimationFrame(() => {
+        refreshFileTree();
+      });
     } catch (error) {
       console.error('创建失败:', error);
+      closeCreateDialog();
       throw error;
     }
   };

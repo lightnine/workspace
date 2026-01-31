@@ -62,6 +62,7 @@ export const Workspace: React.FC = () => {
   const [newName, setNewName] = useState('');
   const [showDetailsPanel, setShowDetailsPanel] = useState(false);
   const [currentFileDetails, setCurrentFileDetails] = useState<FileItem | null>(null);
+  const [urlFileLoading, setUrlFileLoading] = useState(false);
 
   // Determine if we're in notebook or file mode based on URL path
   const isNotebookRoute = location.pathname.startsWith('/editor/notebooks/');
@@ -70,7 +71,7 @@ export const Workspace: React.FC = () => {
   // Open file from URL parameter when component mounts or fileId changes
   useEffect(() => {
     const openFileFromUrl = async () => {
-      if (!fileId) return;
+      if (!fileId || urlFileLoading) return;
       
       const numericFileId = parseInt(fileId, 10);
       if (isNaN(numericFileId)) return;
@@ -79,6 +80,7 @@ export const Workspace: React.FC = () => {
       const existingTab = tabs.find(tab => tab.fileId === numericFileId);
       if (existingTab) return;
       
+      setUrlFileLoading(true);
       try {
         const file = await getObjectById(numericFileId);
         
@@ -94,17 +96,18 @@ export const Workspace: React.FC = () => {
           return;
         }
         
-        // Open file without updating URL since we're already at the correct URL
-        await openFile(file, false);
+        await openFile(file);
       } catch (error) {
         console.error('Failed to open file from URL:', error);
         // Redirect to workspace on error
         navigate('/workspace', { replace: true });
+      } finally {
+        setUrlFileLoading(false);
       }
     };
     
     openFileFromUrl();
-  }, [fileId, isNotebookRoute, isFileRoute, tabs, openFile, navigate]);
+  }, [fileId]);
 
   // Load file details when active tab changes
   useEffect(() => {

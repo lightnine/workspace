@@ -17,8 +17,8 @@ export const Search: React.FC = () => {
       navigate(`/workspace?path=${encodeURIComponent(suggestion.path)}`);
     } else {
       const fileItem = await getObjectById(suggestion.id);
-      // openFile will automatically navigate to the correct URL
       await openFile(fileItem);
+      navigate('/workspace');
     }
   };
 

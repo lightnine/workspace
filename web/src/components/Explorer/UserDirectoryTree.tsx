@@ -204,6 +204,81 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
   const [expandedFolders, setExpandedFolders] = useState<Set<number>>(new Set());
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' }>({ open: false, message: '', severity: 'info' });
   const [operationLoading, setOperationLoading] = useState(false);
+  
+  // Pending dialog state - 用于延迟打开对话框，避免 DropdownMenu 和 Dialog 焦点冲突
+  const [pendingDialog, setPendingDialog] = useState<{
+    type: 'create' | 'rename' | 'delete' | 'move' | 'gitFolder' | null;
+    data?: {
+      createType?: 'file' | 'directory' | 'notebook' | 'query';
+      parentId?: number;
+      item?: FileItem;
+      mode?: 'move' | 'copy';
+    };
+  }>({ type: null });
+
+  // 处理 pending dialog - 延迟打开对话框以避免焦点冲突
+  useEffect(() => {
+    if (pendingDialog.type) {
+      // 使用 setTimeout 确保 DropdownMenu 完全关闭后再打开 Dialog
+      const timer = setTimeout(() => {
+        switch (pendingDialog.type) {
+          case 'create':
+            setCreateDialog({ 
+              open: true, 
+              type: pendingDialog.data?.createType || null, 
+              parentId: pendingDialog.data?.parentId 
+            });
+            setNewName('');
+            break;
+          case 'rename':
+            if (pendingDialog.data?.item) {
+              setRenameDialog({ open: true, item: pendingDialog.data.item });
+              setNewName(pendingDialog.data.item.name);
+            }
+            break;
+          case 'delete':
+            if (pendingDialog.data?.item) {
+              setDeleteDialog({ open: true, item: pendingDialog.data.item });
+            }
+            break;
+          case 'move':
+            if (pendingDialog.data?.item) {
+              setMoveDialog({ 
+                open: true, 
+                item: pendingDialog.data.item, 
+                mode: pendingDialog.data.mode || 'move' 
+              });
+              setSelectedTargetFolder(null);
+              setExpandedFolders(new Set());
+            }
+            break;
+          case 'gitFolder':
+            setGitFolderDialog({ open: true, parentId: pendingDialog.data?.parentId });
+            setGitRepoUrl('');
+            setGitProvider('');
+            setGitFolderName('');
+            setSparseCheckoutMode(false);
+            break;
+        }
+        setPendingDialog({ type: null });
+      }, 100); // 100ms 延迟确保 DropdownMenu 动画完成
+      
+      return () => clearTimeout(timer);
+    }
+  }, [pendingDialog]);
+
+  // 辅助函数：安全地打开对话框（从 DropdownMenu 调用时使用）
+  const openDialogSafely = useCallback((
+    dialogType: 'create' | 'rename' | 'delete' | 'move' | 'gitFolder',
+    data?: {
+      createType?: 'file' | 'directory' | 'notebook' | 'query';
+      parentId?: number;
+      item?: FileItem;
+      mode?: 'move' | 'copy';
+    }
+  ) => {
+    setPendingDialog({ type: dialogType, data });
+  }, []);
 
   // 拖拽状态
   const [draggedItem, setDraggedItem] = useState<FileItem | null>(null);
@@ -380,21 +455,31 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
       } else {
         await createFile(name, '', parentId);
       }
-      await refreshFileTree();
-      // 创建成功后自动展开父目录
-      if (parentId !== undefined) {
-        const newExpanded = new Set(expandedNodes);
-        newExpanded.add(parentId);
-        setExpandedNodes(newExpanded);
-      }
+      
+      // 先关闭对话框，清空状态，等待 Dialog 完全关闭后再进行后续操作
+      // 这样可以避免 Radix UI Dialog 的焦点管理问题导致页面卡死
       setCreateDialog({ open: false, type: null });
       setNewName('');
-      setSnackbar({ open: true, message: t('explorer.createSuccess'), severity: 'success' });
+      setOperationLoading(false);
+      
+      // 使用 requestAnimationFrame 确保 Dialog 完全关闭后再更新其他状态
+      requestAnimationFrame(() => {
+        // 刷新文件树
+        refreshFileTree();
+        // 创建成功后自动展开父目录
+        if (parentId !== undefined) {
+          const newExpanded = new Set(expandedNodes);
+          newExpanded.add(parentId);
+          setExpandedNodes(newExpanded);
+        }
+        setSnackbar({ open: true, message: t('explorer.createSuccess'), severity: 'success' });
+      });
     } catch (error) {
       console.error('创建失败:', error);
-      setSnackbar({ open: true, message: t('explorer.createFailed'), severity: 'error' });
-    } finally {
+      setCreateDialog({ open: false, type: null });
+      setNewName('');
       setOperationLoading(false);
+      setSnackbar({ open: true, message: t('explorer.createFailed'), severity: 'error' });
     }
   };
 
@@ -407,21 +492,29 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
       // For now, just create a regular directory with the git folder name
       // TODO: Implement actual git clone functionality with gitRepoUrl and gitProvider
       await createDirectory(gitFolderName, gitFolderDialog.parentId);
-      await refreshFileTree();
       
-      // Reset git folder dialog state
+      // 先关闭对话框，清空状态
       setGitFolderDialog({ open: false });
       setGitRepoUrl('');
       setGitProvider('');
       setGitFolderName('');
       setSparseCheckoutMode(false);
+      setOperationLoading(false);
       
-      setSnackbar({ open: true, message: t('explorer.createSuccess'), severity: 'success' });
+      // 使用 requestAnimationFrame 确保 Dialog 完全关闭后再更新其他状态
+      requestAnimationFrame(() => {
+        refreshFileTree();
+        setSnackbar({ open: true, message: t('explorer.createSuccess'), severity: 'success' });
+      });
     } catch (error) {
       console.error('创建 Git folder 失败:', error);
-      setSnackbar({ open: true, message: t('explorer.createFailed'), severity: 'error' });
-    } finally {
+      setGitFolderDialog({ open: false });
+      setGitRepoUrl('');
+      setGitProvider('');
+      setGitFolderName('');
+      setSparseCheckoutMode(false);
       setOperationLoading(false);
+      setSnackbar({ open: true, message: t('explorer.createFailed'), severity: 'error' });
     }
   };
 
@@ -430,15 +523,23 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
     setOperationLoading(true);
     try {
       await updateObject(renameDialog.item.id, { name: newName });
-      await refreshFileTree();
+      
+      // 先关闭对话框，清空状态
       setRenameDialog({ open: false, item: null });
       setNewName('');
-      setSnackbar({ open: true, message: t('explorer.renameSuccess'), severity: 'success' });
+      setOperationLoading(false);
+      
+      // 使用 requestAnimationFrame 确保 Dialog 完全关闭后再更新其他状态
+      requestAnimationFrame(() => {
+        refreshFileTree();
+        setSnackbar({ open: true, message: t('explorer.renameSuccess'), severity: 'success' });
+      });
     } catch (error) {
       console.error('重命名失败:', error);
-      setSnackbar({ open: true, message: t('explorer.renameFailed'), severity: 'error' });
-    } finally {
+      setRenameDialog({ open: false, item: null });
+      setNewName('');
       setOperationLoading(false);
+      setSnackbar({ open: true, message: t('explorer.renameFailed'), severity: 'error' });
     }
   };
 
@@ -453,14 +554,21 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
       tabsToClose.forEach(tab => closeTab(tab.id));
       
       await deleteObject(itemToDelete.id);
-      await refreshFileTree();
+      
+      // 先关闭对话框
       setDeleteDialog({ open: false, item: null });
-      setSnackbar({ open: true, message: t('explorer.deleteSuccess'), severity: 'success' });
+      setOperationLoading(false);
+      
+      // 使用 requestAnimationFrame 确保 Dialog 完全关闭后再更新其他状态
+      requestAnimationFrame(() => {
+        refreshFileTree();
+        setSnackbar({ open: true, message: t('explorer.deleteSuccess'), severity: 'success' });
+      });
     } catch (error) {
       console.error('删除失败:', error);
-      setSnackbar({ open: true, message: t('explorer.deleteFailed'), severity: 'error' });
-    } finally {
+      setDeleteDialog({ open: false, item: null });
       setOperationLoading(false);
+      setSnackbar({ open: true, message: t('explorer.deleteFailed'), severity: 'error' });
     }
   };
 
@@ -470,24 +578,31 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
     try {
       if (moveDialog.mode === 'move') {
         await moveObject(moveDialog.item.id, selectedTargetFolder ?? undefined);
-        setSnackbar({ open: true, message: t('explorer.moveSuccess'), severity: 'success' });
       } else {
         await copyObject(moveDialog.item.id, selectedTargetFolder ?? undefined);
-        setSnackbar({ open: true, message: t('explorer.copySuccess'), severity: 'success' });
       }
-      await refreshFileTree();
+      
+      const successMessage = moveDialog.mode === 'move' ? t('explorer.moveSuccess') : t('explorer.copySuccess');
+      
+      // 先关闭对话框，清空状态
       setMoveDialog({ open: false, item: null, mode: 'move' });
       setSelectedTargetFolder(null);
       setExpandedFolders(new Set());
+      setOperationLoading(false);
+      
+      // 使用 requestAnimationFrame 确保 Dialog 完全关闭后再更新其他状态
+      requestAnimationFrame(() => {
+        refreshFileTree();
+        setSnackbar({ open: true, message: successMessage, severity: 'success' });
+      });
     } catch (error) {
       console.error(`${moveDialog.mode === 'move' ? '移动' : '复制'}失败:`, error);
-      setSnackbar({ 
-        open: true, 
-        message: moveDialog.mode === 'move' ? t('explorer.moveFailed') : t('explorer.copyFailed'), 
-        severity: 'error' 
-      });
-    } finally {
+      const errorMessage = moveDialog.mode === 'move' ? t('explorer.moveFailed') : t('explorer.copyFailed');
+      setMoveDialog({ open: false, item: null, mode: 'move' });
+      setSelectedTargetFolder(null);
+      setExpandedFolders(new Set());
       setOperationLoading(false);
+      setSnackbar({ open: true, message: errorMessage, severity: 'error' });
     }
   };
 
@@ -612,27 +727,20 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
     const handleContextAction = async (action: string) => {
       switch (action) {
         case 'newFile':
-          setCreateDialog({ open: true, type: 'file', parentId: item.id });
-          setNewName('');
+          // 使用延迟打开对话框，避免 DropdownMenu 焦点冲突
+          openDialogSafely('create', { createType: 'file', parentId: item.id });
           break;
         case 'newFolder':
-          setCreateDialog({ open: true, type: 'directory', parentId: item.id });
-          setNewName('');
+          openDialogSafely('create', { createType: 'directory', parentId: item.id });
           break;
         case 'newGitFolder':
-          setGitFolderDialog({ open: true, parentId: item.id });
-          setGitRepoUrl('');
-          setGitProvider('');
-          setGitFolderName('');
-          setSparseCheckoutMode(false);
+          openDialogSafely('gitFolder', { parentId: item.id });
           break;
         case 'newNotebook':
-          setCreateDialog({ open: true, type: 'notebook', parentId: item.id });
-          setNewName('');
+          openDialogSafely('create', { createType: 'notebook', parentId: item.id });
           break;
         case 'newQuery':
-          setCreateDialog({ open: true, type: 'query', parentId: item.id });
-          setNewName('');
+          openDialogSafely('create', { createType: 'query', parentId: item.id });
           break;
         case 'openInNewTab':
           // 在新浏览器标签页中打开文件
@@ -659,13 +767,10 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
           }
           break;
         case 'rename':
-          setRenameDialog({ open: true, item });
-          setNewName(item.name);
+          openDialogSafely('rename', { item });
           break;
         case 'move':
-          setMoveDialog({ open: true, item, mode: 'move' });
-          setSelectedTargetFolder(null);
-          setExpandedFolders(new Set());
+          openDialogSafely('move', { item, mode: 'move' });
           break;
         case 'clone':
           // 克隆功能与复制类似，但在同一位置创建副本
@@ -701,7 +806,7 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
           setSnackbar({ open: true, message: t('explorer.addToFavoritesSuccess'), severity: 'success' });
           break;
         case 'delete':
-          setDeleteDialog({ open: true, item });
+          openDialogSafely('delete', { item });
           break;
       }
     };
@@ -1061,27 +1166,19 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
     const handleContextAction = async (action: string) => {
       switch (action) {
         case 'newFile':
-          setCreateDialog({ open: true, type: 'file', parentId: item.id });
-          setNewName('');
+          openDialogSafely('create', { createType: 'file', parentId: item.id });
           break;
         case 'newFolder':
-          setCreateDialog({ open: true, type: 'directory', parentId: item.id });
-          setNewName('');
+          openDialogSafely('create', { createType: 'directory', parentId: item.id });
           break;
         case 'newGitFolder':
-          setGitFolderDialog({ open: true, parentId: item.id });
-          setGitRepoUrl('');
-          setGitProvider('');
-          setGitFolderName('');
-          setSparseCheckoutMode(false);
+          openDialogSafely('gitFolder', { parentId: item.id });
           break;
         case 'newNotebook':
-          setCreateDialog({ open: true, type: 'notebook', parentId: item.id });
-          setNewName('');
+          openDialogSafely('create', { createType: 'notebook', parentId: item.id });
           break;
         case 'newQuery':
-          setCreateDialog({ open: true, type: 'query', parentId: item.id });
-          setNewName('');
+          openDialogSafely('create', { createType: 'query', parentId: item.id });
           break;
         case 'openInNewTab':
           if (!isFolder) {
@@ -1107,13 +1204,10 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
           }
           break;
         case 'rename':
-          setRenameDialog({ open: true, item });
-          setNewName(item.name);
+          openDialogSafely('rename', { item });
           break;
         case 'move':
-          setMoveDialog({ open: true, item, mode: 'move' });
-          setSelectedTargetFolder(null);
-          setExpandedFolders(new Set());
+          openDialogSafely('move', { item, mode: 'move' });
           break;
         case 'clone':
           setOperationLoading(true);
@@ -1146,7 +1240,7 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
           setSnackbar({ open: true, message: t('explorer.addToFavoritesSuccess'), severity: 'success' });
           break;
         case 'delete':
-          setDeleteDialog({ open: true, item });
+          openDialogSafely('delete', { item });
           break;
       }
     };
@@ -1591,40 +1685,32 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
                     </DropdownMenuSubTrigger>
                     <DropdownMenuSubContent className="w-52">
                       <DropdownMenuItem onClick={() => {
-                        setCreateDialog({ open: true, type: 'directory', parentId: currentFolder?.id });
-                        setNewName('');
+                        openDialogSafely('create', { createType: 'directory', parentId: currentFolder?.id });
                       }}>
                         <FolderPlus className="w-4 h-4 mr-2" />
                         {t('explorer.newFolder')}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => {
-                        setGitFolderDialog({ open: true, parentId: currentFolder?.id });
-                        setGitRepoUrl('');
-                        setGitProvider('');
-                        setGitFolderName('');
-                        setSparseCheckoutMode(false);
+                        openDialogSafely('gitFolder', { parentId: currentFolder?.id });
                       }}>
                         <GitBranch className="w-4 h-4 mr-2" />
                         {t('explorer.newGitFolder')}
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onClick={() => {
-                        setCreateDialog({ open: true, type: 'notebook', parentId: currentFolder?.id });
-                        setNewName('');
+                        openDialogSafely('create', { createType: 'notebook', parentId: currentFolder?.id });
                       }}>
                         <Book className="w-4 h-4 mr-2" />
                         {t('explorer.newNotebook')}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => {
-                        setCreateDialog({ open: true, type: 'file', parentId: currentFolder?.id });
-                        setNewName('');
+                        openDialogSafely('create', { createType: 'file', parentId: currentFolder?.id });
                       }}>
                         <FilePlus className="w-4 h-4 mr-2" />
                         {t('explorer.newFile')}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => {
-                        setCreateDialog({ open: true, type: 'query', parentId: currentFolder?.id });
-                        setNewName('');
+                        openDialogSafely('create', { createType: 'query', parentId: currentFolder?.id });
                       }}>
                         <Database className="w-4 h-4 mr-2" />
                         {t('explorer.newQuery')}
