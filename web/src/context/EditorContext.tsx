@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, ReactNode, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Tab, FileItem } from '../types';
 import { getFileContent, saveFileContent, patchNotebook, CellOperation, addRecent } from '../services/api';
 
@@ -28,14 +29,59 @@ const EditorContext = createContext<EditorContextType | undefined>(undefined);
 
 export const EditorProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [tabs, setTabs] = useState<Tab[]>([]);
-  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [activeTabId, setActiveTabIdInternal] = useState<string | null>(null);
   
   // 计算 activeTab
   const activeTab = tabs.find(tab => tab.id === activeTabId) || null;
   
   // 跟踪正在打开的文件 ID，防止重复打开
   const openingFilesRef = useRef<Set<number>>(new Set());
+
+  // 更新 URL 当 activeTab 改变时
+  const updateUrl = useCallback((tab: Tab | null) => {
+    if (!tab) {
+      // 如果没有活动标签，导航到 workspace
+      if (location.pathname.startsWith('/editor/')) {
+        navigate('/workspace', { replace: true });
+      }
+      return;
+    }
+    
+    // 根据文件类型确定正确的 URL
+    const isNotebook = tab.fileName.endsWith('.ipynb');
+    const targetUrl = isNotebook 
+      ? `/editor/notebooks/${tab.fileId}` 
+      : `/editor/files/${tab.fileId}`;
+    
+    // 只有当 URL 不同时才更新
+    if (location.pathname !== targetUrl) {
+      navigate(targetUrl, { replace: true });
+    }
+  }, [navigate, location.pathname]);
+
+  // 自定义 setActiveTabId，在设置时同时更新 URL
+  const setActiveTabId = useCallback((id: string | null) => {
+    setActiveTabIdInternal(id);
+    
+    // 找到对应的 tab 并更新 URL
+    if (id) {
+      // 使用 setTimeout 确保 tabs 状态已更新
+      setTimeout(() => {
+        setTabs(currentTabs => {
+          const tab = currentTabs.find(t => t.id === id);
+          if (tab) {
+            updateUrl(tab);
+          }
+          return currentTabs;
+        });
+      }, 0);
+    } else {
+      updateUrl(null);
+    }
+  }, [updateUrl]);
 
   const openFile = useCallback(async (file: FileItem) => {
     // 如果这个文件正在打开中，跳过
@@ -51,7 +97,8 @@ export const EditorProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     // 检查文件是否已经打开
     const existingTab = tabs.find(tab => tab.fileId === file.id);
     if (existingTab) {
-      setActiveTabId(existingTab.id);
+      setActiveTabIdInternal(existingTab.id);
+      updateUrl(existingTab);
       return;
     }
     
@@ -80,12 +127,15 @@ export const EditorProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         // 再次检查是否已存在（防止竞态条件）
         const existing = prev.find(tab => tab.fileId === file.id);
         if (existing) {
-          setActiveTabId(existing.id);
+          setActiveTabIdInternal(existing.id);
+          updateUrl(existing);
           return prev;
         }
         return [...prev, newTab];
       });
-      setActiveTabId(newTab.id);
+      setActiveTabIdInternal(newTab.id);
+      // 直接更新 URL，不需要等待 state 更新
+      updateUrl(newTab);
 
       // 添加到最近访问
       addRecent({
@@ -101,7 +151,7 @@ export const EditorProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       // 移除正在打开的标记
       openingFilesRef.current.delete(file.id);
     }
-  }, [tabs]);
+  }, [tabs, updateUrl]);
 
   const closeTab = useCallback((tabId: string) => {
     const tab = tabs.find(t => t.id === tabId);
@@ -117,12 +167,14 @@ export const EditorProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     if (activeTabId === tabId) {
       if (remainingTabs.length > 0) {
         const lastTab = remainingTabs[remainingTabs.length - 1];
-        setActiveTabId(lastTab.id);
+        setActiveTabIdInternal(lastTab.id);
+        updateUrl(lastTab);
       } else {
-        setActiveTabId(null);
+        setActiveTabIdInternal(null);
+        updateUrl(null);
       }
     }
-  }, [tabs, activeTabId, t]);
+  }, [tabs, activeTabId, t, updateUrl]);
 
   const updateTabContent = (tabId: string, content: string) => {
     setTabs(prev =>

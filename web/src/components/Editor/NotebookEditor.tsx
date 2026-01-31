@@ -799,8 +799,7 @@ const NotebookCellComponent: React.FC<CellProps> = ({
                   onMount={handleEditorDidMount}
                   options={{
                     minimap: { enabled: false },
-                    lineNumbers: 'on',
-                    lineNumbersMinChars: 2,
+                    lineNumbers: 'off',
                     folding: false,
                     wordWrap: 'on',
                     scrollBeyondLastLine: false,
