@@ -1,12 +1,12 @@
 import apiClient from './api';
-import { ApiResponse, LoginInput, RegisterInput, AuthOutput, UserResponse } from '../types';
+import { ApiResponse, LoginInput, RegisterInput, AuthOutput, UserResponse, API_CODE } from '../types';
 
 // 认证相关 API
 
 // 注册
 export const register = async (input: RegisterInput): Promise<AuthOutput> => {
   const response = await apiClient.post<ApiResponse<AuthOutput>>('/api/v1/auth/register', input);
-  if (response.data.code !== 0) {
+  if (response.data.code !== API_CODE.SUCCESS) {
     throw new Error(response.data.message);
   }
   return response.data.data!;
@@ -15,7 +15,7 @@ export const register = async (input: RegisterInput): Promise<AuthOutput> => {
 // 登录
 export const login = async (input: LoginInput): Promise<AuthOutput> => {
   const response = await apiClient.post<ApiResponse<AuthOutput>>('/api/v1/auth/login', input);
-  if (response.data.code !== 0) {
+  if (response.data.code !== API_CODE.SUCCESS) {
     throw new Error(response.data.message);
   }
   return response.data.data!;
@@ -26,7 +26,7 @@ export const refreshToken = async (refreshToken: string): Promise<AuthOutput> =>
   const response = await apiClient.post<ApiResponse<AuthOutput>>('/api/v1/auth/refresh', {
     refresh_token: refreshToken
   });
-  if (response.data.code !== 0) {
+  if (response.data.code !== API_CODE.SUCCESS) {
     throw new Error(response.data.message);
   }
   return response.data.data!;
@@ -40,7 +40,7 @@ export const logout = async (): Promise<void> => {
 // 获取当前用户信息
 export const getCurrentUser = async (): Promise<UserResponse> => {
   const response = await apiClient.get<ApiResponse<UserResponse>>('/api/v1/users/me');
-  if (response.data.code !== 0) {
+  if (response.data.code !== API_CODE.SUCCESS) {
     throw new Error(response.data.message);
   }
   return response.data.data!;
@@ -49,7 +49,7 @@ export const getCurrentUser = async (): Promise<UserResponse> => {
 // 更新当前用户信息
 export const updateCurrentUser = async (input: { display_name?: string; avatar_url?: string }): Promise<UserResponse> => {
   const response = await apiClient.put<ApiResponse<UserResponse>>('/api/v1/users/me', input);
-  if (response.data.code !== 0) {
+  if (response.data.code !== API_CODE.SUCCESS) {
     throw new Error(response.data.message);
   }
   return response.data.data!;
@@ -61,7 +61,7 @@ export const changePassword = async (oldPassword: string, newPassword: string): 
     old_password: oldPassword,
     new_password: newPassword
   });
-  if (response.data.code !== 0) {
+  if (response.data.code !== API_CODE.SUCCESS) {
     throw new Error(response.data.message);
   }
 };

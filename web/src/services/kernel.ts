@@ -1,4 +1,6 @@
 import { getAccessToken } from './api';
+import { API_CODE } from '../types';
+import { v4 as uuidv4 } from 'uuid';
 
 // Kernel types
 export interface KernelSpec {
@@ -58,13 +60,18 @@ export interface CellOutput {
 const API_BASE_URL = (import.meta.env?.VITE_API_BASE_URL as string) || 'http://localhost:8080';
 const WS_BASE_URL = API_BASE_URL.replace(/^http/, 'ws');
 
+// Request ID header key
+const REQUEST_ID_KEY = 'X-Request-ID';
+
 // Helper function for API calls
 async function apiCall<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const token = getAccessToken();
+  const requestId = `req-${uuidv4()}`;
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
+      [REQUEST_ID_KEY]: requestId,
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers,
     },
@@ -76,7 +83,7 @@ async function apiCall<T>(endpoint: string, options: RequestInit = {}): Promise<
   }
 
   const data = await response.json();
-  if (data.code !== 0) {
+  if (data.code !== API_CODE.SUCCESS) {
     throw new Error(data.message || 'API request failed');
   }
   return data.data;

@@ -1,10 +1,12 @@
 package middleware
 
 import (
+	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/leondli/workspace/pkg/response"
 	"github.com/rs/zerolog/log"
 )
 
@@ -13,15 +15,34 @@ const (
 	ContextRequestID = "request_id"
 )
 
+// RequestID creates a middleware to handle request ID
+// It will use the X-Request-ID header from frontend if provided, otherwise generate a new one
+func RequestID() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Try to get request ID from header (frontend provided)
+		requestID := c.GetHeader(response.RequestIDKey)
+		
+		// If not provided, generate a new one
+		if requestID == "" {
+			requestID = "req-" + uuid.New().String()
+		}
+		
+		// Store in context and set response header
+		c.Set(response.RequestIDKey, requestID)
+		c.Set(ContextRequestID, requestID) // Keep backward compatibility
+		c.Header(response.RequestIDKey, requestID)
+		
+		c.Next()
+	}
+}
+
 // RequestLogger creates a logging middleware
 func RequestLogger() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 
-		// Generate request ID
-		requestID := uuid.New().String()
-		c.Set(ContextRequestID, requestID)
-		c.Header("X-Request-ID", requestID)
+		// Get request ID (should be set by RequestID middleware)
+		requestID := response.GetRequestID(c)
 
 		// Process request
 		c.Next()
@@ -54,16 +75,18 @@ func Recovery() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		defer func() {
 			if err := recover(); err != nil {
-				requestID, _ := c.Get(ContextRequestID)
+				requestID := response.GetRequestID(c)
 				log.Error().
-					Str("request_id", requestID.(string)).
+					Str("request_id", requestID).
 					Interface("error", err).
 					Str("path", c.Request.URL.Path).
 					Msg("Panic recovered")
 
-				c.AbortWithStatusJSON(500, gin.H{
-					"code":    50000,
-					"message": "internal server error",
+				c.AbortWithStatusJSON(http.StatusInternalServerError, response.ErrorResponse{
+					Code:      response.CodeInternalError,
+					HTTPCode:  http.StatusInternalServerError,
+					Message:   "internal server error",
+					RequestID: requestID,
 				})
 			}
 		}()
@@ -90,9 +113,5 @@ func CORS() gin.HandlerFunc {
 
 // GetRequestID retrieves the request ID from context
 func GetRequestID(c *gin.Context) string {
-	requestID, exists := c.Get(ContextRequestID)
-	if !exists {
-		return ""
-	}
-	return requestID.(string)
+	return response.GetRequestID(c)
 }

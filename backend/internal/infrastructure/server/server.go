@@ -27,6 +27,7 @@ func New(cfg *config.ServerConfig) *Server {
 	router := gin.New()
 
 	// Apply global middleware
+	router.Use(middleware.RequestID())     // Must be first to set request ID
 	router.Use(middleware.Recovery())
 	router.Use(middleware.RequestLogger())
 	router.Use(middleware.CORS())

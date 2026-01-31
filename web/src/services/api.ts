@@ -1,9 +1,18 @@
 import axios, { AxiosInstance, AxiosError, AxiosResponse } from 'axios';
-import { ApiResponse, FileItem, SearchSuggestion, RecentItem, PaginatedResponse, UserResponse } from '../types';
+import { ApiResponse, ApiErrorResponse, FileItem, SearchSuggestion, RecentItem, PaginatedResponse, UserResponse, API_CODE } from '../types';
+import { v4 as uuidv4 } from 'uuid';
 
 // Token 管理
 const TOKEN_KEY = 'access_token';
 const REFRESH_TOKEN_KEY = 'refresh_token';
+
+// Request ID header key
+const REQUEST_ID_KEY = 'X-Request-ID';
+
+// Generate a unique request ID
+const generateRequestId = (): string => {
+  return `req-${uuidv4()}`;
+};
 
 export const getAccessToken = (): string | null => {
   return localStorage.getItem(TOKEN_KEY);
@@ -43,6 +52,8 @@ apiClient.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    // 添加 Request ID
+    config.headers[REQUEST_ID_KEY] = generateRequestId();
     return config;
   },
   (error) => {
@@ -78,7 +89,7 @@ apiClient.interceptors.response.use(
     // 统一错误处理
     if (error.response) {
       const status = error.response.status;
-      const data = error.response.data as ApiResponse;
+      const data = error.response.data as ApiErrorResponse;
       const message = data?.message || error.message;
 
       // 401 错误，尝试刷新 token
@@ -168,7 +179,7 @@ export const getFileTree = async (parentId?: number, depth: number = 3): Promise
     params.parent_id = parentId;
   }
   const response = await apiClient.get<ApiResponse<FileItem[]>>('/api/v1/objects/tree', { params });
-  if (response.data.code !== 0) {
+  if (response.data.code !== API_CODE.SUCCESS) {
     throw new Error(response.data.message);
   }
   return response.data.data || [];
@@ -177,7 +188,7 @@ export const getFileTree = async (parentId?: number, depth: number = 3): Promise
 // 获取对象详情
 export const getObjectById = async (id: number): Promise<FileItem> => {
   const response = await apiClient.get<ApiResponse<FileItem>>(`/api/v1/objects/${id}`);
-  if (response.data.code !== 0) {
+  if (response.data.code !== API_CODE.SUCCESS) {
     throw new Error(response.data.message);
   }
   return response.data.data!;
@@ -199,7 +210,7 @@ export const saveFileContent = async (fileId: number, content: string, message?:
     content,
     message
   });
-  if (response.data.code !== 0) {
+  if (response.data.code !== API_CODE.SUCCESS) {
     throw new Error(response.data.message);
   }
   return response.data.data!;
@@ -224,7 +235,7 @@ export const patchNotebook = async (
     operations,
     message
   });
-  if (response.data.code !== 0) {
+  if (response.data.code !== API_CODE.SUCCESS) {
     throw new Error(response.data.message);
   }
   return response.data.data!;
@@ -237,7 +248,7 @@ export const createDirectory = async (name: string, parentId?: number, descripti
     parent_id: parentId,
     description
   });
-  if (response.data.code !== 0) {
+  if (response.data.code !== API_CODE.SUCCESS) {
     throw new Error(response.data.message);
   }
   return response.data.data!;
@@ -277,7 +288,7 @@ export const createFile = async (
       'Content-Type': 'multipart/form-data'
     }
   });
-  if (response.data.code !== 0) {
+  if (response.data.code !== API_CODE.SUCCESS) {
     throw new Error(response.data.message);
   }
   return response.data.data!;
@@ -286,7 +297,7 @@ export const createFile = async (
 // 更新对象（重命名等）
 export const updateObject = async (id: number, input: { name?: string; description?: string }): Promise<FileItem> => {
   const response = await apiClient.put<ApiResponse<FileItem>>(`/api/v1/objects/${id}`, input);
-  if (response.data.code !== 0) {
+  if (response.data.code !== API_CODE.SUCCESS) {
     throw new Error(response.data.message);
   }
   return response.data.data!;
@@ -295,7 +306,7 @@ export const updateObject = async (id: number, input: { name?: string; descripti
 // 删除对象
 export const deleteObject = async (id: number): Promise<void> => {
   const response = await apiClient.delete<ApiResponse>(`/api/v1/objects/${id}`);
-  if (response.data.code !== 0) {
+  if (response.data.code !== API_CODE.SUCCESS) {
     throw new Error(response.data.message);
   }
 };
@@ -306,7 +317,7 @@ export const moveObject = async (id: number, targetParentId?: number, newName?: 
     target_parent_id: targetParentId,
     new_name: newName
   });
-  if (response.data.code !== 0) {
+  if (response.data.code !== API_CODE.SUCCESS) {
     throw new Error(response.data.message);
   }
   return response.data.data!;
@@ -318,7 +329,7 @@ export const copyObject = async (id: number, targetParentId?: number, newName?: 
     target_parent_id: targetParentId,
     new_name: newName
   });
-  if (response.data.code !== 0) {
+  if (response.data.code !== API_CODE.SUCCESS) {
     throw new Error(response.data.message);
   }
   return response.data.data!;
@@ -368,7 +379,7 @@ export const searchByName = async (
     params.type = types;
   }
   const response = await apiClient.get<ApiResponse<PaginatedResponse<SearchSuggestion>>>('/api/v1/search', { params });
-  if (response.data.code !== 0) {
+  if (response.data.code !== API_CODE.SUCCESS) {
     throw new Error(response.data.message);
   }
   return response.data.data!;
@@ -386,7 +397,7 @@ export const searchByContent = async (
     params.type = types;
   }
   const response = await apiClient.get<ApiResponse<PaginatedResponse<SearchSuggestion>>>('/api/v1/search/content', { params });
-  if (response.data.code !== 0) {
+  if (response.data.code !== API_CODE.SUCCESS) {
     throw new Error(response.data.message);
   }
   return response.data.data!;
@@ -397,7 +408,7 @@ export const searchByTag = async (tag: string, page: number = 1, pageSize: numbe
   const response = await apiClient.get<ApiResponse<PaginatedResponse<SearchSuggestion>>>('/api/v1/search/tags', {
     params: { tag, page, page_size: pageSize }
   });
-  if (response.data.code !== 0) {
+  if (response.data.code !== API_CODE.SUCCESS) {
     throw new Error(response.data.message);
   }
   return response.data.data!;
@@ -448,7 +459,7 @@ export const addRecent = async (item: Omit<RecentItem, 'id' | 'lastAccessed'>): 
 // 获取当前 AppID 下的所有用户
 export const getUsersByAppId = async (): Promise<UserResponse[]> => {
   const response = await apiClient.get<ApiResponse<UserResponse[]>>('/api/v1/users/app');
-  if (response.data.code !== 0) {
+  if (response.data.code !== API_CODE.SUCCESS) {
     throw new Error(response.data.message);
   }
   return response.data.data || [];
@@ -489,7 +500,7 @@ export const getVersionsByObjectId = async (
     `/api/v1/versions/objects/${objectId}`,
     { params: { page, page_size: pageSize } }
   );
-  if (response.data.code !== 0) {
+  if (response.data.code !== API_CODE.SUCCESS) {
     throw new Error(response.data.message);
   }
   return response.data.data || { items: [], total: 0, page: 1, page_size: pageSize };
@@ -510,7 +521,7 @@ export const restoreVersion = async (versionId: string): Promise<FileItem> => {
   const response = await apiClient.post<ApiResponse<FileItem>>(
     `/api/v1/versions/${versionId}/restore`
   );
-  if (response.data.code !== 0) {
+  if (response.data.code !== API_CODE.SUCCESS) {
     throw new Error(response.data.message);
   }
   return response.data.data!;
@@ -521,7 +532,7 @@ export const getVersionById = async (versionId: string): Promise<VersionInfo> =>
   const response = await apiClient.get<ApiResponse<VersionInfo>>(
     `/api/v1/versions/${versionId}`
   );
-  if (response.data.code !== 0) {
+  if (response.data.code !== API_CODE.SUCCESS) {
     throw new Error(response.data.message);
   }
   return response.data.data!;

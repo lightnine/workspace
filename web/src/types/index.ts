@@ -1,6 +1,19 @@
 // 文件类型（匹配后端 ObjectType）
 export type FileType = 'directory' | 'notebook' | 'python' | 'sql' | 'markdown' | 'config' | 'file';
 
+// API 响应码常量
+export const API_CODE = {
+  SUCCESS: 'SUCCESS',
+  BAD_REQUEST: 'BAD_REQUEST',
+  UNAUTHORIZED: 'UNAUTHORIZED',
+  PERMISSION_DENIED: 'PERMISSION_DENIED',
+  NOT_FOUND: 'NOT_FOUND',
+  ALREADY_EXISTS: 'ALREADY_EXISTS',
+  INTERNAL_ERROR: 'INTERNAL_ERROR',
+  VALIDATION_ERROR: 'VALIDATION_ERROR',
+  INVALID_ARGUMENT: 'INVALID_ARGUMENT',
+} as const;
+
 // 文件/文件夹项（匹配后端 ObjectResponse）
 export interface FileItem {
   id: number; // 后端使用 int64 (JuiceFS inode)
@@ -71,9 +84,25 @@ export interface RecentItem {
 
 // API 响应类型（匹配后端 Response）
 export interface ApiResponse<T = any> {
-  code: number;
+  code: string;
   message: string;
   data?: T;
+  requestId: string;
+}
+
+// 错误详情
+export interface ErrorDetail {
+  reason: string;
+  metadata?: Record<string, string>;
+}
+
+// API 错误响应类型（匹配后端 ErrorResponse）
+export interface ApiErrorResponse {
+  code: string;
+  httpCode: number;
+  message: string;
+  details?: ErrorDetail[];
+  requestId: string;
 }
 
 // 分页响应（匹配后端 PaginatedData）
