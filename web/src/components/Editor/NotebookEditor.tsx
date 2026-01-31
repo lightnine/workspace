@@ -1,26 +1,4 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import {
-  Box,
-  Typography,
-  IconButton,
-  Tooltip,
-  Button,
-  Menu,
-  MenuItem,
-  ListItemIcon,
-  ListItemText,
-  Divider,
-  Chip,
-  CircularProgress,
-  Collapse,
-  TextField,
-  alpha,
-  useTheme,
-  Fade,
-  ButtonGroup,
-  Select,
-  FormControl
-} from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -28,42 +6,60 @@ import rehypeRaw from 'rehype-raw';
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import DOMPurify from 'dompurify';
 import Editor from '@monaco-editor/react';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Separator } from '@/components/ui/separator';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useApp } from '../../context/AppContext';
 import { useKernel } from '../../context/KernelContext';
 import type { CellOutput } from '../../services/kernel';
-
-// Icons
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import PlaylistPlayIcon from '@mui/icons-material/PlaylistPlay';
-import StopIcon from '@mui/icons-material/Stop';
-import AddIcon from '@mui/icons-material/Add';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
-import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
-import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
-import CodeIcon from '@mui/icons-material/Code';
-import TextFieldsIcon from '@mui/icons-material/TextFields';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import ChevronRightIcon from '@mui/icons-material/ChevronRight';
-import ClearIcon from '@mui/icons-material/Clear';
-import VerticalAlignTopIcon from '@mui/icons-material/VerticalAlignTop';
-import VerticalAlignBottomIcon from '@mui/icons-material/VerticalAlignBottom';
-import RestartAltIcon from '@mui/icons-material/RestartAlt';
-import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
-import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
-import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
-import UnfoldLessIcon from '@mui/icons-material/UnfoldLess';
-import UnfoldMoreIcon from '@mui/icons-material/UnfoldMore';
-import LinkIcon from '@mui/icons-material/Link';
-import LinkOffIcon from '@mui/icons-material/LinkOff';
-
-import SaveIcon from '@mui/icons-material/Save';
-import AutorenewIcon from '@mui/icons-material/Autorenew';
-import CloudDoneIcon from '@mui/icons-material/CloudDone';
+import {
+  Play,
+  ListOrdered,
+  Square,
+  Plus,
+  Trash2,
+  Copy,
+  ChevronUp,
+  ChevronDown,
+  MoreHorizontal,
+  Code,
+  Type,
+  ChevronRight,
+  ChevronDownIcon,
+  X,
+  ArrowUpToLine,
+  ArrowDownToLine,
+  RotateCcw,
+  Circle,
+  CheckCircle2,
+  XCircle,
+  ChevronsDownUp,
+  ChevronsUpDown,
+  Link,
+  Unlink,
+  Save,
+  RefreshCw,
+  Cloud,
+  Loader2,
+} from 'lucide-react';
 import { CellOperation } from '../../services/api';
 
-// 导出 CellOperation 类型供其他组件使用
 export type { CellOperation };
 
 interface NotebookEditorProps {
@@ -81,14 +77,8 @@ interface NotebookEditorProps {
 interface NotebookData {
   cells: NotebookCell[];
   metadata?: {
-    language_info?: {
-      name?: string;
-    };
-    kernelspec?: {
-      display_name?: string;
-      language?: string;
-      name?: string;
-    };
+    language_info?: { name?: string };
+    kernelspec?: { display_name?: string; language?: string; name?: string };
   };
   nbformat?: number;
   nbformat_minor?: number;
@@ -99,11 +89,7 @@ interface NotebookCell {
   source: string | string[];
   outputs?: NotebookOutput[];
   execution_count?: number | null;
-  metadata?: {
-    language?: string;
-    collapsed?: boolean;
-    scrolled?: boolean;
-  };
+  metadata?: { language?: string; collapsed?: boolean; scrolled?: boolean };
   id?: string;
 }
 
@@ -119,7 +105,7 @@ interface NotebookOutput {
   metadata?: Record<string, unknown>;
 }
 
-// 工具函数
+// Utility functions
 const normalizeText = (value?: string | string[]) => {
   if (!value) return '';
   return Array.isArray(value) ? value.join('') : value;
@@ -145,16 +131,12 @@ const createEmptyCell = (type: 'code' | 'markdown' = 'code'): NotebookCell => ({
   id: generateCellId()
 });
 
-// 渲染输出组件
-const CellOutput: React.FC<{ outputs: NotebookOutput[]; isDarkMode: boolean }> = ({ outputs, isDarkMode }) => {
+// Output renderer component
+const CellOutputRenderer: React.FC<{ outputs: NotebookOutput[]; isDarkMode: boolean }> = ({ outputs, isDarkMode }) => {
   if (!outputs || outputs.length === 0) return null;
 
   return (
-    <Box sx={{ 
-      fontFamily: '"JetBrains Mono", "Fira Code", "Consolas", monospace',
-      fontSize: '13px',
-      lineHeight: 1.5
-    }}>
+    <div className="font-mono text-[13px] leading-relaxed">
       {outputs.map((output, index) => {
         const outputType = output.output_type;
         
@@ -162,20 +144,15 @@ const CellOutput: React.FC<{ outputs: NotebookOutput[]; isDarkMode: boolean }> =
           const text = normalizeText(output.text);
           const isStderr = output.name === 'stderr';
           return (
-            <Box
+            <pre
               key={index}
-              component="pre"
-              sx={{
-                m: 0,
-                p: 1.5,
-                bgcolor: 'transparent',
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word',
-                color: isStderr ? 'error.main' : (isDarkMode ? '#D4D4D4' : '#1e1e1e'),
-              }}
+              className={cn(
+                'm-0 p-3 bg-transparent whitespace-pre-wrap break-words',
+                isStderr ? 'text-red-500' : isDarkMode ? 'text-zinc-300' : 'text-zinc-800'
+              )}
             >
               {text}
-            </Box>
+            </pre>
           );
         }
 
@@ -183,21 +160,15 @@ const CellOutput: React.FC<{ outputs: NotebookOutput[]; isDarkMode: boolean }> =
           const traceback = normalizeText(output.traceback);
           const errorMsg = traceback || `${output.ename || 'Error'}: ${output.evalue || ''}`;
           return (
-            <Box
+            <pre
               key={index}
-              component="pre"
-              sx={{
-                m: 0,
-                p: 1.5,
-                bgcolor: isDarkMode ? alpha('#ff1744', 0.08) : alpha('#ff1744', 0.05),
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word',
-                color: 'error.main',
-                borderRadius: 1
-              }}
+              className={cn(
+                'm-0 p-3 whitespace-pre-wrap break-words text-red-500 rounded',
+                isDarkMode ? 'bg-red-500/10' : 'bg-red-50'
+              )}
             >
               {errorMsg}
-            </Box>
+            </pre>
           );
         }
 
@@ -210,72 +181,50 @@ const CellOutput: React.FC<{ outputs: NotebookOutput[]; isDarkMode: boolean }> =
           const imageMime = imagePng ? 'image/png' : 'image/jpeg';
 
           return (
-            <Box key={index}>
+            <div key={index}>
               {html && (
-                <Box
-                  sx={{
-                    p: 1.5,
-                    overflowX: 'auto',
-                    '& table': {
-                      borderCollapse: 'collapse',
-                      width: 'auto',
-                      fontSize: '12px',
-                      '& th, & td': {
-                        border: '1px solid',
-                        borderColor: isDarkMode ? alpha('#fff', 0.15) : alpha('#000', 0.12),
-                        p: '6px 12px',
-                        textAlign: 'left'
-                      },
-                      '& th': {
-                        bgcolor: isDarkMode ? alpha('#fff', 0.05) : alpha('#000', 0.03),
-                        fontWeight: 600
-                      },
-                      '& tr:hover td': {
-                        bgcolor: isDarkMode ? alpha('#fff', 0.02) : alpha('#000', 0.02)
-                      }
-                    }
-                  }}
+                <div
+                  className={cn(
+                    'p-3 overflow-x-auto',
+                    '[&_table]:border-collapse [&_table]:w-auto [&_table]:text-xs',
+                    '[&_th]:border [&_th]:border-border [&_th]:p-1.5 [&_th]:text-left [&_th]:font-semibold',
+                    '[&_td]:border [&_td]:border-border [&_td]:p-1.5',
+                    isDarkMode ? '[&_th]:bg-white/5' : '[&_th]:bg-black/5'
+                  )}
                   dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(html) }}
                 />
               )}
               {!html && text && (
-                <Box
-                  component="pre"
-                  sx={{
-                    m: 0,
-                    p: 1.5,
-                    whiteSpace: 'pre-wrap',
-                    color: isDarkMode ? '#D4D4D4' : '#1e1e1e'
-                  }}
-                >
+                <pre className={cn(
+                  'm-0 p-3 whitespace-pre-wrap',
+                  isDarkMode ? 'text-zinc-300' : 'text-zinc-800'
+                )}>
                   {text}
-                </Box>
+                </pre>
               )}
               {imageData && (
-                <Box sx={{ p: 1.5 }}>
-                  <Box
-                    component="img"
+                <div className="p-3">
+                  <img
                     src={`data:${imageMime};base64,${imageData}`}
                     alt="output"
-                    sx={{ 
-                      maxWidth: '100%',
-                      borderRadius: 1,
-                      boxShadow: isDarkMode ? '0 2px 8px rgba(0,0,0,0.4)' : '0 2px 8px rgba(0,0,0,0.1)'
-                    }}
+                    className={cn(
+                      'max-w-full rounded',
+                      isDarkMode ? 'shadow-lg shadow-black/40' : 'shadow-md shadow-black/10'
+                    )}
                   />
-                </Box>
+                </div>
               )}
-            </Box>
+            </div>
           );
         }
 
         return null;
       })}
-    </Box>
+    </div>
   );
 };
 
-// VS Code 风格的单元格组件
+// Cell component props
 interface CellProps {
   cell: NotebookCell;
   index: number;
@@ -300,7 +249,8 @@ interface CellProps {
   isDarkMode: boolean;
 }
 
-const NotebookCell: React.FC<CellProps> = ({
+// Cell component
+const NotebookCellComponent: React.FC<CellProps> = ({
   cell,
   index: _index,
   isActive,
@@ -324,8 +274,6 @@ const NotebookCell: React.FC<CellProps> = ({
   isDarkMode
 }) => {
   const { t } = useTranslation();
-  const theme = useTheme();
-  const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
   const [isMarkdownEditing, setIsMarkdownEditing] = useState(false);
   const [outputCollapsed, setOutputCollapsed] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
@@ -339,15 +287,6 @@ const NotebookCell: React.FC<CellProps> = ({
   const hasOutput = outputs.length > 0;
   const executionCount = cell.execution_count;
 
-  const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
-    event.stopPropagation();
-    setMenuAnchor(event.currentTarget);
-  };
-
-  const handleMenuClose = () => {
-    setMenuAnchor(null);
-  };
-
   const handleEditorDidMount = (editor: any) => {
     editorRef.current = editor;
   };
@@ -358,312 +297,270 @@ const NotebookCell: React.FC<CellProps> = ({
     }
   };
 
-  // 计算编辑器高度 - 更紧凑
+  // Calculate editor height
   const editorHeight = useMemo(() => {
     const lines = source.split('\n').length;
     return Math.max(38, Math.min(lines * 19 + 10, 400));
   }, [source]);
 
-  // 执行状态图标
+  // Status icon
   const StatusIcon = () => {
     if (isRunning) {
-      return <CircularProgress size={14} thickness={5} sx={{ color: 'primary.main' }} />;
+      return <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" />;
     }
     if (hasError) {
-      return <ErrorOutlineIcon sx={{ fontSize: 16, color: 'error.main' }} />;
+      return <XCircle className="w-4 h-4 text-red-500" />;
     }
     if (executionCount !== null && executionCount !== undefined) {
-      return <CheckCircleOutlineIcon sx={{ fontSize: 16, color: 'success.main' }} />;
+      return <CheckCircle2 className="w-4 h-4 text-green-500" />;
     }
     return null;
   };
 
   return (
-    <Box
+    <div
       onClick={onActivate}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      sx={{
-        position: 'relative',
-        mb: 0,
-        '&:hover .cell-toolbar': {
-          opacity: 1
-        }
-      }}
+      className="relative mb-0"
     >
-      {/* 单元格主容器 */}
-      <Box
-        sx={{
-          display: 'flex',
-          borderLeft: '2px solid',
-          borderColor: isActive ? 'primary.main' : 'transparent',
-          transition: 'border-color 0.1s ease',
-          bgcolor: isActive 
-            ? (isDarkMode ? alpha('#2563EB', 0.05) : alpha('#2563EB', 0.03))
-            : 'transparent',
-        }}
+      {/* Cell container */}
+      <div
+        className={cn(
+          'flex border-l-2 transition-colors',
+          isActive ? 'border-primary bg-primary/5' : 'border-transparent'
+        )}
       >
-        {/* 左侧执行区域 - VS Code 风格 */}
-        <Box
-          sx={{
-            width: 48,
-            flexShrink: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            pt: 0.5,
-            gap: 0.5
-          }}
-        >
-          {/* 运行按钮 */}
+        {/* Left side - execution area */}
+        <div className="w-12 flex-shrink-0 flex flex-col items-center pt-1 gap-1">
+          {/* Run button */}
           {isCodeCell && (
-            <Tooltip title={t('notebook.runCell')} placement="left" arrow>
-              <IconButton
-                size="small"
-                onClick={(e) => { e.stopPropagation(); onRun(); }}
-                disabled={readOnly || isRunning}
-                sx={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: '6px',
-                  bgcolor: isHovered || isActive 
-                    ? (isDarkMode ? alpha('#fff', 0.08) : alpha('#000', 0.05))
-                    : 'transparent',
-                  color: isRunning ? 'primary.main' : 'text.secondary',
-                  '&:hover': { 
-                    bgcolor: isDarkMode ? alpha('#fff', 0.12) : alpha('#000', 0.08),
-                    color: 'primary.main'
-                  }
-                }}
-              >
-                {isRunning ? (
-                  <CircularProgress size={14} thickness={5} sx={{ color: 'primary.main' }} />
-                ) : (
-                  <PlayArrowIcon sx={{ fontSize: 18 }} />
-                )}
-              </IconButton>
-            </Tooltip>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={cn(
+                      'h-7 w-7 rounded-md',
+                      (isHovered || isActive) && 'bg-accent'
+                    )}
+                    onClick={(e) => { e.stopPropagation(); onRun(); }}
+                    disabled={readOnly || isRunning}
+                  >
+                    {isRunning ? (
+                      <Loader2 className="w-4 h-4 text-primary animate-spin" />
+                    ) : (
+                      <Play className="w-4 h-4" />
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="left">{t('notebook.runCell')}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           )}
 
-          {/* 执行计数 */}
+          {/* Execution count */}
           {isCodeCell && (
-            <Typography
-              sx={{
-                fontFamily: '"JetBrains Mono", monospace',
-                fontSize: '11px',
-                color: hasError ? 'error.main' : 'text.disabled',
-                fontWeight: 500,
-                minHeight: 16,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}
-            >
+            <span className={cn(
+              'font-mono text-[11px] min-h-4 flex items-center justify-center',
+              hasError ? 'text-red-500' : 'text-muted-foreground'
+            )}>
               [{executionCount ?? ' '}]
-            </Typography>
+            </span>
           )}
 
-          {/* Markdown 标识 */}
+          {/* Markdown indicator */}
           {isMarkdownCell && (
-            <Box
-              sx={{
-                width: 28,
-                height: 28,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}
-            >
-              <TextFieldsIcon sx={{ fontSize: 16, color: 'text.disabled' }} />
-            </Box>
+            <div className="w-7 h-7 flex items-center justify-center">
+              <Type className="w-4 h-4 text-muted-foreground" />
+            </div>
           )}
-        </Box>
+        </div>
 
-        {/* 右侧内容区 */}
-        <Box sx={{ flex: 1, minWidth: 0, py: 0.5, pr: 1 }}>
-          {/* Cell 工具栏 - 悬停显示 */}
-          <Fade in={isHovered || isActive}>
-            <Box
-              className="cell-toolbar"
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'flex-end',
-                gap: 0.25,
-                mb: 0.5,
-                height: 24,
-                opacity: 0,
-                transition: 'opacity 0.15s'
-              }}
-            >
-              {/* 类型切换 */}
-              <ButtonGroup size="small" sx={{ mr: 0.5 }}>
-                <Tooltip title="Code" arrow>
-                  <Button
-                    onClick={(e) => { e.stopPropagation(); onChangeType('code'); }}
-                    disabled={readOnly}
-                    sx={{
-                      minWidth: 28,
-                      height: 22,
-                      p: 0,
-                      bgcolor: isCodeCell 
-                        ? (isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.08))
-                        : 'transparent',
-                      color: isCodeCell ? 'text.primary' : 'text.secondary',
-                      border: 'none',
-                      '&:hover': { 
-                        bgcolor: isDarkMode ? alpha('#fff', 0.12) : alpha('#000', 0.1),
-                        border: 'none'
-                      }
-                    }}
-                  >
-                    <CodeIcon sx={{ fontSize: 14 }} />
-                  </Button>
+        {/* Right side - content */}
+        <div className="flex-1 min-w-0 py-1 pr-2">
+          {/* Cell toolbar - show on hover */}
+          <div
+            className={cn(
+              'flex items-center justify-end gap-0.5 mb-1 h-6 transition-opacity',
+              (isHovered || isActive) ? 'opacity-100' : 'opacity-0'
+            )}
+          >
+            {/* Type toggle */}
+            <div className="flex mr-1">
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={cn(
+                        'h-5.5 w-7 rounded-r-none',
+                        isCodeCell && (isDarkMode ? 'bg-white/10' : 'bg-black/10')
+                      )}
+                      onClick={(e) => { e.stopPropagation(); onChangeType('code'); }}
+                      disabled={readOnly}
+                    >
+                      <Code className="w-3.5 h-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Code</TooltipContent>
                 </Tooltip>
-                <Tooltip title="Markdown" arrow>
-                  <Button
-                    onClick={(e) => { e.stopPropagation(); onChangeType('markdown'); }}
-                    disabled={readOnly}
-                    sx={{
-                      minWidth: 28,
-                      height: 22,
-                      p: 0,
-                      bgcolor: isMarkdownCell 
-                        ? (isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.08))
-                        : 'transparent',
-                      color: isMarkdownCell ? 'text.primary' : 'text.secondary',
-                      border: 'none',
-                      '&:hover': { 
-                        bgcolor: isDarkMode ? alpha('#fff', 0.12) : alpha('#000', 0.1),
-                        border: 'none'
-                      }
-                    }}
-                  >
-                    <TextFieldsIcon sx={{ fontSize: 14 }} />
-                  </Button>
+              </TooltipProvider>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={cn(
+                        'h-5.5 w-7 rounded-l-none',
+                        isMarkdownCell && (isDarkMode ? 'bg-white/10' : 'bg-black/10')
+                      )}
+                      onClick={(e) => { e.stopPropagation(); onChangeType('markdown'); }}
+                      disabled={readOnly}
+                    >
+                      <Type className="w-3.5 h-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Markdown</TooltipContent>
                 </Tooltip>
-              </ButtonGroup>
+              </TooltipProvider>
+            </div>
 
-              <Divider orientation="vertical" flexItem sx={{ mx: 0.5, height: 16, alignSelf: 'center' }} />
+            <Separator orientation="vertical" className="h-4 mx-1" />
 
-              {/* 移动按钮 */}
-              <Tooltip title={t('notebook.moveUp')} arrow>
-                <span>
-                  <IconButton
-                    size="small"
+            {/* Move buttons */}
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-5.5 w-5.5"
                     onClick={(e) => { e.stopPropagation(); onMoveUp(); }}
                     disabled={!canMoveUp || readOnly}
-                    sx={{ 
-                      width: 22, 
-                      height: 22,
-                      color: 'text.secondary',
-                      '&:hover': { bgcolor: isDarkMode ? alpha('#fff', 0.08) : alpha('#000', 0.06) }
-                    }}
                   >
-                    <KeyboardArrowUpIcon sx={{ fontSize: 16 }} />
-                  </IconButton>
-                </span>
+                    <ChevronUp className="w-4 h-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t('notebook.moveUp')}</TooltipContent>
               </Tooltip>
-              <Tooltip title={t('notebook.moveDown')} arrow>
-                <span>
-                  <IconButton
-                    size="small"
+            </TooltipProvider>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-5.5 w-5.5"
                     onClick={(e) => { e.stopPropagation(); onMoveDown(); }}
                     disabled={!canMoveDown || readOnly}
-                    sx={{ 
-                      width: 22, 
-                      height: 22,
-                      color: 'text.secondary',
-                      '&:hover': { bgcolor: isDarkMode ? alpha('#fff', 0.08) : alpha('#000', 0.06) }
-                    }}
                   >
-                    <KeyboardArrowDownIcon sx={{ fontSize: 16 }} />
-                  </IconButton>
-                </span>
+                    <ChevronDown className="w-4 h-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t('notebook.moveDown')}</TooltipContent>
               </Tooltip>
+            </TooltipProvider>
 
-              <Divider orientation="vertical" flexItem sx={{ mx: 0.5, height: 16, alignSelf: 'center' }} />
+            <Separator orientation="vertical" className="h-4 mx-1" />
 
-              {/* 复制和删除 */}
-              <Tooltip title={t('notebook.duplicate')} arrow>
-                <span>
-                  <IconButton
-                    size="small"
+            {/* Copy and delete */}
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-5.5 w-5.5"
                     onClick={(e) => { e.stopPropagation(); onDuplicate(); }}
                     disabled={readOnly}
-                    sx={{ 
-                      width: 22, 
-                      height: 22,
-                      color: 'text.secondary',
-                      '&:hover': { bgcolor: isDarkMode ? alpha('#fff', 0.08) : alpha('#000', 0.06) }
-                    }}
                   >
-                    <ContentCopyIcon sx={{ fontSize: 14 }} />
-                  </IconButton>
-                </span>
+                    <Copy className="w-3.5 h-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t('notebook.duplicate')}</TooltipContent>
               </Tooltip>
-              <Tooltip title={t('notebook.deleteCell')} arrow>
-                <span>
-                  <IconButton
-                    size="small"
+            </TooltipProvider>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-5.5 w-5.5 hover:text-red-500 hover:bg-red-500/10"
                     onClick={(e) => { e.stopPropagation(); onDelete(); }}
                     disabled={readOnly || totalCells <= 1}
-                    sx={{ 
-                      width: 22, 
-                      height: 22,
-                      color: 'text.secondary',
-                      '&:hover': { 
-                        bgcolor: alpha(theme.palette.error.main, 0.1),
-                        color: 'error.main'
-                      }
-                    }}
                   >
-                    <DeleteOutlineIcon sx={{ fontSize: 14 }} />
-                  </IconButton>
-                </span>
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t('notebook.deleteCell')}</TooltipContent>
               </Tooltip>
+            </TooltipProvider>
 
-              {/* 更多菜单 */}
-              <IconButton
-                size="small"
-                onClick={handleMenuOpen}
-                sx={{ 
-                  width: 22, 
-                  height: 22,
-                  color: 'text.secondary',
-                  '&:hover': { bgcolor: isDarkMode ? alpha('#fff', 0.08) : alpha('#000', 0.06) }
-                }}
-              >
-                <MoreHorizIcon sx={{ fontSize: 16 }} />
-              </IconButton>
-            </Box>
-          </Fade>
+            {/* More menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-5.5 w-5.5">
+                  <MoreHorizontal className="w-4 h-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onClick={() => onInsertAbove('code')} disabled={readOnly}>
+                  <ArrowUpToLine className="w-4 h-4 mr-2" />
+                  {t('notebook.insertCodeAbove')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onInsertBelow('code')} disabled={readOnly}>
+                  <ArrowDownToLine className="w-4 h-4 mr-2" />
+                  {t('notebook.insertCodeBelow')}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => onInsertAbove('markdown')} disabled={readOnly}>
+                  <Type className="w-4 h-4 mr-2" />
+                  {t('notebook.insertMarkdownAbove')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onInsertBelow('markdown')} disabled={readOnly}>
+                  <Type className="w-4 h-4 mr-2" />
+                  {t('notebook.insertMarkdownBelow')}
+                </DropdownMenuItem>
+                {isCodeCell && hasOutput && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={onClearOutput} disabled={readOnly}>
+                      <X className="w-4 h-4 mr-2" />
+                      {t('notebook.clearOutput')}
+                    </DropdownMenuItem>
+                  </>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem 
+                  onClick={onDelete} 
+                  disabled={readOnly || totalCells <= 1}
+                  className="text-red-500 focus:text-red-500"
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  {t('notebook.deleteCell')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
 
-          {/* Cell Content */}
-          <Box
-            sx={{
-              borderRadius: '4px',
-              overflow: 'hidden',
-              border: '1px solid',
-              borderColor: isActive 
-                ? (isDarkMode ? alpha('#fff', 0.15) : alpha('#000', 0.12))
-                : (isDarkMode ? alpha('#fff', 0.08) : alpha('#000', 0.06)),
-              bgcolor: isDarkMode ? '#1e1e1e' : '#ffffff',
-              transition: 'border-color 0.1s ease'
-            }}
+          {/* Cell content */}
+          <div
+            className={cn(
+              'rounded overflow-hidden border transition-colors',
+              isActive 
+                ? (isDarkMode ? 'border-white/15' : 'border-black/15')
+                : (isDarkMode ? 'border-white/10' : 'border-black/10'),
+              isDarkMode ? 'bg-[#1e1e1e]' : 'bg-white'
+            )}
           >
             {isCodeCell ? (
-              // 代码编辑器
-              <Box
-                sx={{
-                  '& .monaco-editor': {
-                    paddingTop: '2px !important'
-                  },
-                  '& .monaco-editor .margin': {
-                    bgcolor: 'transparent !important'
-                  }
-                }}
-              >
+              // Code editor
+              <div className="[&_.monaco-editor]:pt-0.5 [&_.monaco-editor_.margin]:!bg-transparent">
                 <Editor
                   height={editorHeight}
                   language={language}
@@ -699,93 +596,29 @@ const NotebookCell: React.FC<CellProps> = ({
                   }}
                   theme={isDarkMode ? 'vs-dark' : 'light'}
                 />
-              </Box>
+              </div>
             ) : isMarkdownCell ? (
-              // Markdown 编辑/预览
+              // Markdown edit/preview
               isMarkdownEditing || (isActive && !source) ? (
-                <Box sx={{ p: 1 }}>
-                  <TextField
-                    fullWidth
-                    multiline
-                    minRows={2}
+                <div className="p-2">
+                  <textarea
+                    className={cn(
+                      'w-full min-h-[60px] p-2 rounded bg-transparent resize-none',
+                      'font-mono text-[13px] outline-none border-none',
+                      'placeholder:text-muted-foreground'
+                    )}
                     value={source}
                     onChange={(e) => onUpdate(e.target.value)}
                     onBlur={() => source && setIsMarkdownEditing(false)}
                     autoFocus={isMarkdownEditing}
                     disabled={readOnly}
                     placeholder={t('notebook.markdownPlaceholder')}
-                    sx={{
-                      '& .MuiInputBase-root': {
-                        fontFamily: '"JetBrains Mono", monospace',
-                        fontSize: '13px',
-                        p: 1,
-                        bgcolor: 'transparent'
-                      },
-                      '& .MuiOutlinedInput-notchedOutline': {
-                        border: 'none'
-                      }
-                    }}
                   />
-                </Box>
+                </div>
               ) : (
-                <Box
+                <div
                   onClick={(e) => { e.stopPropagation(); setIsMarkdownEditing(true); }}
-                  sx={{
-                    p: 1.5,
-                    cursor: 'text',
-                    minHeight: 40,
-                    '& > *:first-of-type': { mt: 0 },
-                    '& > *:last-child': { mb: 0 },
-                    '& h1': { fontSize: '1.5em', fontWeight: 600, mt: 1.5, mb: 0.75, borderBottom: '1px solid', borderColor: 'divider', pb: 0.5 },
-                    '& h2': { fontSize: '1.3em', fontWeight: 600, mt: 1.5, mb: 0.75, borderBottom: '1px solid', borderColor: 'divider', pb: 0.5 },
-                    '& h3': { fontSize: '1.15em', fontWeight: 600, mt: 1, mb: 0.5 },
-                    '& h4, & h5, & h6': { fontWeight: 600, mt: 1, mb: 0.5 },
-                    '& p': { my: 0.75, lineHeight: 1.6 },
-                    '& pre': {
-                      p: 1.5,
-                      borderRadius: '4px',
-                      bgcolor: isDarkMode ? alpha('#000', 0.3) : alpha('#000', 0.04),
-                      overflowX: 'auto',
-                      my: 1
-                    },
-                    '& code': {
-                      fontFamily: '"JetBrains Mono", monospace',
-                      fontSize: '12px',
-                      bgcolor: isDarkMode ? alpha('#fff', 0.08) : alpha('#000', 0.05),
-                      px: 0.5,
-                      py: 0.25,
-                      borderRadius: '3px'
-                    },
-                    '& pre code': {
-                      bgcolor: 'transparent',
-                      p: 0
-                    },
-                    '& img': { maxWidth: '100%', borderRadius: '4px', my: 1 },
-                    '& a': { color: 'primary.main', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } },
-                    '& blockquote': {
-                      borderLeft: '3px solid',
-                      borderColor: isDarkMode ? alpha('#fff', 0.3) : alpha('#000', 0.2),
-                      pl: 2,
-                      ml: 0,
-                      my: 1,
-                      color: 'text.secondary',
-                      fontStyle: 'italic'
-                    },
-                    '& ul, & ol': { pl: 2.5, my: 0.75 },
-                    '& li': { my: 0.25 },
-                    '& hr': { my: 2, borderColor: 'divider' },
-                    '& table': {
-                      borderCollapse: 'collapse',
-                      my: 1,
-                      '& th, & td': {
-                        border: '1px solid',
-                        borderColor: 'divider',
-                        p: 0.75,
-                        textAlign: 'left'
-                      },
-                      '& th': { fontWeight: 600, bgcolor: isDarkMode ? alpha('#fff', 0.03) : alpha('#000', 0.02) }
-                    }
-                  }}
+                  className="p-3 cursor-text min-h-[40px] markdown-preview"
                 >
                   {source ? (
                     <ReactMarkdown
@@ -795,231 +628,109 @@ const NotebookCell: React.FC<CellProps> = ({
                       {source}
                     </ReactMarkdown>
                   ) : (
-                    <Typography color="text.disabled" fontSize="13px" fontStyle="italic">
+                    <span className="text-muted-foreground text-[13px] italic">
                       {t('notebook.emptyMarkdown')}
-                    </Typography>
+                    </span>
                   )}
-                </Box>
+                </div>
               )
             ) : (
               // Raw cell
-              <Box 
-                component="pre" 
-                sx={{ 
-                  p: 1.5, 
-                  m: 0, 
-                  fontFamily: '"JetBrains Mono", monospace', 
-                  fontSize: '13px' 
-                }}
-              >
+              <pre className="p-3 m-0 font-mono text-[13px]">
                 {source || t('notebook.emptyCell')}
-              </Box>
+              </pre>
             )}
-          </Box>
+          </div>
 
-          {/* Cell Output - VS Code 风格 */}
+          {/* Cell output */}
           {isCodeCell && hasOutput && (
-            <Box sx={{ mt: 0.5 }}>
-              {/* Output 头部 */}
-              <Box
-                onClick={(e) => { e.stopPropagation(); setOutputCollapsed(!outputCollapsed); }}
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 0.5,
-                  cursor: 'pointer',
-                  py: 0.25,
-                  px: 0.5,
-                  borderRadius: '4px',
-                  '&:hover': {
-                    bgcolor: isDarkMode ? alpha('#fff', 0.05) : alpha('#000', 0.03)
-                  }
-                }}
-              >
-                {outputCollapsed ? (
-                  <ChevronRightIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
-                ) : (
-                  <ExpandMoreIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
-                )}
-                <StatusIcon />
-                <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '11px' }}>
-                  {outputs.length} output{outputs.length > 1 ? 's' : ''}
-                  {hasError && ' (error)'}
-                </Typography>
-                
-                {/* 清除输出按钮 */}
-                <Box sx={{ flex: 1 }} />
-                <Fade in={isHovered || isActive}>
-                  <IconButton
-                    size="small"
-                    onClick={(e) => { e.stopPropagation(); onClearOutput(); }}
-                    disabled={readOnly}
-                    sx={{ 
-                      width: 20, 
-                      height: 20,
-                      color: 'text.disabled',
-                      '&:hover': { 
-                        bgcolor: isDarkMode ? alpha('#fff', 0.08) : alpha('#000', 0.06),
-                        color: 'text.secondary'
-                      }
-                    }}
+            <div className="mt-1">
+              {/* Output header */}
+              <Collapsible open={!outputCollapsed} onOpenChange={(open) => setOutputCollapsed(!open)}>
+                <CollapsibleTrigger asChild>
+                  <button
+                    className={cn(
+                      'flex items-center gap-1 py-0.5 px-1 rounded cursor-pointer',
+                      'hover:bg-accent transition-colors'
+                    )}
+                    onClick={(e) => e.stopPropagation()}
                   >
-                    <ClearIcon sx={{ fontSize: 12 }} />
-                  </IconButton>
-                </Fade>
-              </Box>
+                    {outputCollapsed ? (
+                      <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                    ) : (
+                      <ChevronDownIcon className="w-4 h-4 text-muted-foreground" />
+                    )}
+                    <StatusIcon />
+                    <span className="text-[11px] text-muted-foreground">
+                      {outputs.length} output{outputs.length > 1 ? 's' : ''}
+                      {hasError && ' (error)'}
+                    </span>
+                    
+                    <div className="flex-1" />
+                    {(isHovered || isActive) && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5 text-muted-foreground hover:text-foreground"
+                        onClick={(e) => { e.stopPropagation(); onClearOutput(); }}
+                        disabled={readOnly}
+                      >
+                        <X className="w-3 h-3" />
+                      </Button>
+                    )}
+                  </button>
+                </CollapsibleTrigger>
 
-              {/* Output 内容 */}
-              <Collapse in={!outputCollapsed}>
-                <Box
-                  sx={{
-                    borderRadius: '4px',
-                    border: '1px solid',
-                    borderColor: hasError 
-                      ? alpha(theme.palette.error.main, 0.3)
-                      : (isDarkMode ? alpha('#fff', 0.08) : alpha('#000', 0.06)),
-                    bgcolor: isDarkMode ? alpha('#000', 0.2) : alpha('#000', 0.02),
-                    maxHeight: 400,
-                    overflow: 'auto'
-                  }}
-                >
-                  <CellOutput outputs={outputs} isDarkMode={isDarkMode} />
-                </Box>
-              </Collapse>
-            </Box>
+                {/* Output content */}
+                <CollapsibleContent>
+                  <div
+                    className={cn(
+                      'rounded border max-h-[400px] overflow-auto',
+                      hasError 
+                        ? 'border-red-500/30' 
+                        : (isDarkMode ? 'border-white/10' : 'border-black/10'),
+                      isDarkMode ? 'bg-black/20' : 'bg-black/5'
+                    )}
+                  >
+                    <CellOutputRenderer outputs={outputs} isDarkMode={isDarkMode} />
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+            </div>
           )}
-        </Box>
-      </Box>
+        </div>
+      </div>
 
-      {/* 更多菜单 */}
-      <Menu
-        anchorEl={menuAnchor}
-        open={Boolean(menuAnchor)}
-        onClose={handleMenuClose}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-        PaperProps={{
-          sx: {
-            minWidth: 180,
-            borderRadius: '8px',
-            boxShadow: isDarkMode 
-              ? '0 4px 20px rgba(0,0,0,0.4)' 
-              : '0 4px 20px rgba(0,0,0,0.12)'
-          }
-        }}
-      >
-        <MenuItem onClick={() => { onInsertAbove('code'); handleMenuClose(); }} disabled={readOnly}>
-          <ListItemIcon><VerticalAlignTopIcon fontSize="small" /></ListItemIcon>
-          <ListItemText primaryTypographyProps={{ fontSize: '13px' }}>{t('notebook.insertCodeAbove')}</ListItemText>
-        </MenuItem>
-        <MenuItem onClick={() => { onInsertBelow('code'); handleMenuClose(); }} disabled={readOnly}>
-          <ListItemIcon><VerticalAlignBottomIcon fontSize="small" /></ListItemIcon>
-          <ListItemText primaryTypographyProps={{ fontSize: '13px' }}>{t('notebook.insertCodeBelow')}</ListItemText>
-        </MenuItem>
-        <Divider sx={{ my: 0.5 }} />
-        <MenuItem onClick={() => { onInsertAbove('markdown'); handleMenuClose(); }} disabled={readOnly}>
-          <ListItemIcon><TextFieldsIcon fontSize="small" /></ListItemIcon>
-          <ListItemText primaryTypographyProps={{ fontSize: '13px' }}>{t('notebook.insertMarkdownAbove')}</ListItemText>
-        </MenuItem>
-        <MenuItem onClick={() => { onInsertBelow('markdown'); handleMenuClose(); }} disabled={readOnly}>
-          <ListItemIcon><TextFieldsIcon fontSize="small" /></ListItemIcon>
-          <ListItemText primaryTypographyProps={{ fontSize: '13px' }}>{t('notebook.insertMarkdownBelow')}</ListItemText>
-        </MenuItem>
-        {isCodeCell && hasOutput && (
-          <>
-            <Divider sx={{ my: 0.5 }} />
-            <MenuItem onClick={() => { onClearOutput(); handleMenuClose(); }} disabled={readOnly}>
-              <ListItemIcon><ClearIcon fontSize="small" /></ListItemIcon>
-              <ListItemText primaryTypographyProps={{ fontSize: '13px' }}>{t('notebook.clearOutput')}</ListItemText>
-            </MenuItem>
-          </>
-        )}
-        <Divider sx={{ my: 0.5 }} />
-        <MenuItem 
-          onClick={() => { onDelete(); handleMenuClose(); }} 
-          disabled={readOnly || totalCells <= 1}
-          sx={{ color: 'error.main' }}
-        >
-          <ListItemIcon><DeleteOutlineIcon fontSize="small" color="error" /></ListItemIcon>
-          <ListItemText primaryTypographyProps={{ fontSize: '13px', color: 'error.main' }}>{t('notebook.deleteCell')}</ListItemText>
-        </MenuItem>
-      </Menu>
-
-      {/* 插入按钮 - 在 cell 之间显示 */}
+      {/* Insert button - show between cells */}
       {(isActive || isHovered) && !readOnly && (
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 0.5,
-            py: 0.5,
-            opacity: 0.6,
-            transition: 'opacity 0.15s',
-            '&:hover': { opacity: 1 }
-          }}
-        >
-          <Box
-            sx={{
-              flex: 1,
-              height: '1px',
-              bgcolor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.08)
-            }}
-          />
+        <div className="flex items-center justify-center gap-1 py-1 opacity-60 hover:opacity-100 transition-opacity">
+          <div className={cn('flex-1 h-px', isDarkMode ? 'bg-white/10' : 'bg-black/10')} />
           <Button
-            size="small"
-            startIcon={<CodeIcon sx={{ fontSize: '12px !important' }} />}
+            variant="ghost"
+            size="sm"
+            className="h-5.5 px-2 text-[11px]"
             onClick={(e) => { e.stopPropagation(); onInsertBelow('code'); }}
-            sx={{
-              fontSize: '11px',
-              textTransform: 'none',
-              color: 'text.secondary',
-              px: 1,
-              py: 0.25,
-              minHeight: 22,
-              borderRadius: '4px',
-              '&:hover': {
-                bgcolor: isDarkMode ? alpha('#fff', 0.08) : alpha('#000', 0.05),
-                color: 'primary.main'
-              }
-            }}
           >
+            <Code className="w-3 h-3 mr-1" />
             Code
           </Button>
           <Button
-            size="small"
-            startIcon={<TextFieldsIcon sx={{ fontSize: '12px !important' }} />}
+            variant="ghost"
+            size="sm"
+            className="h-5.5 px-2 text-[11px]"
             onClick={(e) => { e.stopPropagation(); onInsertBelow('markdown'); }}
-            sx={{
-              fontSize: '11px',
-              textTransform: 'none',
-              color: 'text.secondary',
-              px: 1,
-              py: 0.25,
-              minHeight: 22,
-              borderRadius: '4px',
-              '&:hover': {
-                bgcolor: isDarkMode ? alpha('#fff', 0.08) : alpha('#000', 0.05),
-                color: 'primary.main'
-              }
-            }}
           >
+            <Type className="w-3 h-3 mr-1" />
             Markdown
           </Button>
-          <Box
-            sx={{
-              flex: 1,
-              height: '1px',
-              bgcolor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.08)
-            }}
-          />
-        </Box>
+          <div className={cn('flex-1 h-px', isDarkMode ? 'bg-white/10' : 'bg-black/10')} />
+        </div>
       )}
-    </Box>
+    </div>
   );
 };
 
-// 主组件
+// Main component
 export const NotebookEditor: React.FC<NotebookEditorProps> = ({
   content,
   height = '100%',
@@ -1066,11 +777,11 @@ export const NotebookEditor: React.FC<NotebookEditorProps> = ({
     return 'idle';
   }, [isConnected, isConnecting, realKernelStatus]);
   
-  // 增量更新：跟踪待保存的操作
+  // Incremental update: track pending operations
   const pendingOperationsRef = useRef<CellOperation[]>([]);
   const savedCellsRef = useRef<NotebookCell[]>([]);
 
-  // 解析 notebook
+  // Parse notebook
   const { notebook, error } = useMemo(() => {
     if (!content) {
       return { 
@@ -1194,7 +905,7 @@ export const NotebookEditor: React.FC<NotebookEditorProps> = ({
     }
   }, [onChange, notebook]);
 
-  // 单元格操作
+  // Cell operations
   const handleUpdateCell = useCallback((index: number, source: string) => {
     const newCells = [...cells];
     const cell = newCells[index];
@@ -1306,6 +1017,20 @@ export const NotebookEditor: React.FC<NotebookEditorProps> = ({
             });
           }
           
+          // Use queueMicrotask to avoid updating parent state during render
+          queueMicrotask(() => {
+            if (onChange && notebook) {
+              const updatedNotebook: NotebookData = {
+                ...notebook,
+                cells: updated.map(c => ({
+                  ...c,
+                  source: textToArray(normalizeText(c.source))
+                }))
+              };
+              onChange(JSON.stringify(updatedNotebook, null, 2));
+            }
+          });
+          
           return updated;
         });
         
@@ -1314,21 +1039,6 @@ export const NotebookEditor: React.FC<NotebookEditorProps> = ({
           next.delete(index);
           return next;
         });
-        
-        // Trigger onChange
-        if (onChange && notebook) {
-          setCells(currentCells => {
-            const updatedNotebook: NotebookData = {
-              ...notebook,
-              cells: currentCells.map(c => ({
-                ...c,
-                source: textToArray(normalizeText(c.source))
-              }))
-            };
-            onChange(JSON.stringify(updatedNotebook, null, 2));
-            return currentCells;
-          });
-        }
       }
     );
   }, [cells, isConnected, connectKernel, selectedKernelSpec, executeCode, addPendingOperation, onChange, notebook]);
@@ -1511,35 +1221,35 @@ export const NotebookEditor: React.FC<NotebookEditorProps> = ({
     }
   }, [interruptCurrentKernel]);
 
-  // Kernel 状态配置
+  // Kernel status config
   const getKernelStatusConfig = () => {
     switch (kernelStatus) {
       case 'disconnected':
         return { 
-          color: isDarkMode ? '#6B7280' : '#9CA3AF',
-          bgColor: isDarkMode ? alpha('#fff', 0.05) : alpha('#000', 0.04),
-          icon: <FiberManualRecordIcon sx={{ fontSize: 8 }} />,
+          color: isDarkMode ? 'text-zinc-500' : 'text-zinc-400',
+          bgColor: isDarkMode ? 'bg-white/5' : 'bg-black/5',
+          icon: <Circle className="w-2 h-2" />,
           label: 'Disconnected'
         };
       case 'connecting':
         return { 
-          color: '#F59E0B',
-          bgColor: alpha('#F59E0B', 0.1),
-          icon: <CircularProgress size={8} sx={{ color: '#F59E0B' }} />,
+          color: 'text-amber-500',
+          bgColor: 'bg-amber-500/10',
+          icon: <Loader2 className="w-2 h-2 animate-spin" />,
           label: 'Connecting...'
         };
       case 'busy':
         return { 
-          color: '#F59E0B',
-          bgColor: alpha('#F59E0B', 0.1),
-          icon: <CircularProgress size={8} sx={{ color: '#F59E0B' }} />,
+          color: 'text-amber-500',
+          bgColor: 'bg-amber-500/10',
+          icon: <Loader2 className="w-2 h-2 animate-spin" />,
           label: 'Busy'
         };
       case 'idle':
         return { 
-          color: '#10B981',
-          bgColor: alpha('#10B981', 0.1),
-          icon: <FiberManualRecordIcon sx={{ fontSize: 8, color: '#10B981' }} />,
+          color: 'text-green-500',
+          bgColor: 'bg-green-500/10',
+          icon: <Circle className="w-2 h-2 fill-green-500" />,
           label: 'Idle'
         };
     }
@@ -1549,411 +1259,278 @@ export const NotebookEditor: React.FC<NotebookEditorProps> = ({
 
   if (error) {
     return (
-      <Box sx={{ height, overflow: 'auto', p: 3 }}>
-        <Box
-          sx={{
-            p: 3,
-            borderRadius: '8px',
-            border: '1px solid',
-            borderColor: 'error.main',
-            bgcolor: isDarkMode ? alpha('#ff1744', 0.1) : alpha('#ff1744', 0.05)
-          }}
-        >
-          <Typography color="error" fontWeight={600} sx={{ mb: 2 }}>
+      <div className="overflow-auto p-6" style={{ height }}>
+        <div className={cn(
+          'p-6 rounded-lg border border-red-500',
+          isDarkMode ? 'bg-red-500/10' : 'bg-red-50'
+        )}>
+          <h3 className="text-red-500 font-semibold mb-4">
             Invalid Notebook Format
-          </Typography>
-          <Typography color="error.main" fontSize="13px" sx={{ mb: 2 }}>
+          </h3>
+          <p className="text-red-500 text-sm mb-4">
             {error}
-          </Typography>
-          <Box
-            component="pre"
-            sx={{
-              m: 0, 
-              p: 2, 
-              borderRadius: '4px', 
-              bgcolor: isDarkMode ? alpha('#000', 0.3) : alpha('#000', 0.04),
-              fontSize: '12px', 
-              fontFamily: '"JetBrains Mono", monospace', 
-              whiteSpace: 'pre-wrap',
-              overflowX: 'auto',
-              maxHeight: 300
-            }}
-          >
+          </p>
+          <pre className={cn(
+            'm-0 p-4 rounded text-xs font-mono whitespace-pre-wrap overflow-x-auto max-h-[300px]',
+            isDarkMode ? 'bg-black/30' : 'bg-black/5'
+          )}>
             {content}
-          </Box>
-        </Box>
-      </Box>
+          </pre>
+        </div>
+      </div>
     );
   }
 
   return (
-    <Box 
+    <div 
       ref={containerRef} 
       tabIndex={-1} 
-      sx={{ 
-        height, 
-        display: 'flex', 
-        flexDirection: 'column', 
-        bgcolor: isDarkMode ? '#1e1e1e' : '#ffffff',
-        outline: 'none'
-      }}
+      className={cn(
+        'flex flex-col outline-none',
+        isDarkMode ? 'bg-[#1e1e1e]' : 'bg-white'
+      )}
+      style={{ height }}
     >
-      {/* VS Code 风格顶部工具栏 */}
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 0.5,
-          px: 1,
-          py: 0.5,
-          borderBottom: '1px solid',
-          borderColor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.08),
-          bgcolor: isDarkMode ? '#252526' : '#f3f3f3',
-          flexShrink: 0,
-          minHeight: 36
-        }}
-      >
-        {/* 运行按钮组 */}
-        <Tooltip title={`${t('notebook.runCell')} (Shift+Enter)`} arrow>
-          <span>
-            <IconButton
-              size="small"
-              onClick={() => handleRunCell(activeCellIndex)}
-              disabled={readOnly || cells[activeCellIndex]?.cell_type !== 'code' || kernelStatus === 'connecting'}
-              sx={{
-                width: 28,
-                height: 28,
-                borderRadius: '4px',
-                color: isDarkMode ? '#cccccc' : '#424242',
-                '&:hover': { bgcolor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.08) },
-                '&:disabled': { color: isDarkMode ? '#5a5a5a' : '#bdbdbd' }
-              }}
-            >
-              <PlayArrowIcon sx={{ fontSize: 18 }} />
-            </IconButton>
-          </span>
-        </Tooltip>
+      {/* Toolbar */}
+      <div className={cn(
+        'flex items-center gap-1 px-2 py-1 border-b flex-shrink-0 min-h-9',
+        isDarkMode ? 'bg-[#252526] border-white/10' : 'bg-zinc-100 border-black/10'
+      )}>
+        {/* Run buttons */}
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => handleRunCell(activeCellIndex)}
+                disabled={readOnly || cells[activeCellIndex]?.cell_type !== 'code' || kernelStatus === 'connecting'}
+              >
+                <Play className="w-4 h-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t('notebook.runCell')} (Shift+Enter)</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
 
-        <Tooltip title={t('notebook.runAll')} arrow>
-          <span>
-            <IconButton
-              size="small"
-              onClick={handleRunAll}
-              disabled={readOnly || kernelStatus === 'connecting'}
-              sx={{
-                width: 28,
-                height: 28,
-                borderRadius: '4px',
-                color: isDarkMode ? '#cccccc' : '#424242',
-                '&:hover': { bgcolor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.08) }
-              }}
-            >
-              <PlaylistPlayIcon sx={{ fontSize: 18 }} />
-            </IconButton>
-          </span>
-        </Tooltip>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={handleRunAll}
+                disabled={readOnly || kernelStatus === 'connecting'}
+              >
+                <ListOrdered className="w-4 h-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t('notebook.runAll')}</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
 
-        <Divider orientation="vertical" flexItem sx={{ mx: 0.5, height: 20, alignSelf: 'center' }} />
+        <Separator orientation="vertical" className="h-5 mx-1" />
 
-        <Tooltip title={t('notebook.stopExecution')} arrow>
-          <span>
-            <IconButton
-              size="small"
-              onClick={handleInterruptKernel}
-              disabled={kernelStatus !== 'busy'}
-              sx={{
-                width: 28,
-                height: 28,
-                borderRadius: '4px',
-                color: isDarkMode ? '#cccccc' : '#424242',
-                '&:hover': { bgcolor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.08) },
-                '&:disabled': { color: isDarkMode ? '#5a5a5a' : '#bdbdbd' }
-              }}
-            >
-              <StopIcon sx={{ fontSize: 18 }} />
-            </IconButton>
-          </span>
-        </Tooltip>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={handleInterruptKernel}
+                disabled={kernelStatus !== 'busy'}
+              >
+                <Square className="w-4 h-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t('notebook.stopExecution')}</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
 
-        <Tooltip title={t('notebook.restartKernel')} arrow>
-          <span>
-            <IconButton
-              size="small"
-              onClick={handleRestartKernel}
-              disabled={kernelStatus === 'disconnected'}
-              sx={{
-                width: 28,
-                height: 28,
-                borderRadius: '4px',
-                color: isDarkMode ? '#cccccc' : '#424242',
-                '&:hover': { bgcolor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.08) },
-                '&:disabled': { color: isDarkMode ? '#5a5a5a' : '#bdbdbd' }
-              }}
-            >
-              <RestartAltIcon sx={{ fontSize: 18 }} />
-            </IconButton>
-          </span>
-        </Tooltip>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={handleRestartKernel}
+                disabled={kernelStatus === 'disconnected'}
+              >
+                <RotateCcw className="w-4 h-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t('notebook.restartKernel')}</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
 
-        <Divider orientation="vertical" flexItem sx={{ mx: 0.5, height: 20, alignSelf: 'center' }} />
+        <Separator orientation="vertical" className="h-5 mx-1" />
 
-        {/* 清除输出 */}
-        <Tooltip title={t('notebook.clearAllOutputs')} arrow>
-          <span>
-            <IconButton
-              size="small"
-              onClick={handleClearAllOutputs}
-              disabled={readOnly}
-              sx={{
-                width: 28,
-                height: 28,
-                borderRadius: '4px',
-                color: isDarkMode ? '#cccccc' : '#424242',
-                '&:hover': { bgcolor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.08) }
-              }}
-            >
-              <ClearIcon sx={{ fontSize: 16 }} />
-            </IconButton>
-          </span>
-        </Tooltip>
+        {/* Clear outputs */}
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={handleClearAllOutputs}
+                disabled={readOnly}
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t('notebook.clearAllOutputs')}</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
 
-        {/* 折叠/展开所有 */}
-        <Tooltip title={allCollapsed ? t('notebook.expandAll') : t('notebook.collapseAll')} arrow>
-          <IconButton
-            size="small"
-            onClick={() => setAllCollapsed(!allCollapsed)}
-            sx={{
-              width: 28,
-              height: 28,
-              borderRadius: '4px',
-              color: isDarkMode ? '#cccccc' : '#424242',
-              '&:hover': { bgcolor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.08) }
-            }}
-          >
-            {allCollapsed ? <UnfoldMoreIcon sx={{ fontSize: 16 }} /> : <UnfoldLessIcon sx={{ fontSize: 16 }} />}
-          </IconButton>
-        </Tooltip>
+        {/* Collapse/expand all */}
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => setAllCollapsed(!allCollapsed)}
+              >
+                {allCollapsed ? <ChevronsUpDown className="w-4 h-4" /> : <ChevronsDownUp className="w-4 h-4" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{allCollapsed ? t('notebook.expandAll') : t('notebook.collapseAll')}</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
 
-        <Box sx={{ flex: 1 }} />
+        <div className="flex-1" />
 
-        {/* 保存状态 */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mr: 1 }}>
+        {/* Save status */}
+        <div className="flex items-center gap-1 mr-2">
           {isSaving ? (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <AutorenewIcon 
-                sx={{ 
-                  fontSize: 14, 
-                  color: 'primary.main',
-                  animation: 'spin 1s linear infinite',
-                  '@keyframes spin': {
-                    '0%': { transform: 'rotate(0deg)' },
-                    '100%': { transform: 'rotate(360deg)' }
-                  }
-                }} 
-              />
-              <Typography variant="caption" sx={{ fontSize: '11px', color: 'text.secondary' }}>
-                Saving...
-              </Typography>
-            </Box>
+            <div className="flex items-center gap-1">
+              <RefreshCw className="w-3.5 h-3.5 text-primary animate-spin" />
+              <span className="text-[11px] text-muted-foreground">Saving...</span>
+            </div>
           ) : isDirty ? (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <FiberManualRecordIcon sx={{ fontSize: 8, color: 'warning.main' }} />
-              <Typography variant="caption" sx={{ fontSize: '11px', color: 'warning.main' }}>
-                Modified
-              </Typography>
-            </Box>
+            <div className="flex items-center gap-1">
+              <Circle className="w-2 h-2 fill-amber-500 text-amber-500" />
+              <span className="text-[11px] text-amber-500">Modified</span>
+            </div>
           ) : lastSavedTime ? (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <CloudDoneIcon sx={{ fontSize: 14, color: 'success.main' }} />
-              <Typography variant="caption" sx={{ fontSize: '11px', color: 'text.secondary' }}>
-                Saved
-              </Typography>
-            </Box>
+            <div className="flex items-center gap-1">
+              <Cloud className="w-3.5 h-3.5 text-green-500" />
+              <span className="text-[11px] text-muted-foreground">Saved</span>
+            </div>
           ) : null}
-        </Box>
+        </div>
 
-        {/* 保存按钮 */}
-        <Tooltip title={`Save (${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+S)`} arrow>
-          <span>
-            <IconButton
-              size="small"
-              onClick={handleSave}
-              disabled={readOnly || isSaving || !isDirty}
-              sx={{
-                width: 28,
-                height: 28,
-                borderRadius: '4px',
-                color: isDirty ? 'primary.main' : (isDarkMode ? '#5a5a5a' : '#bdbdbd'),
-                '&:hover': { bgcolor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.08) },
-                '&:disabled': { color: isDarkMode ? '#5a5a5a' : '#bdbdbd' }
-              }}
-            >
-              <SaveIcon sx={{ fontSize: 16 }} />
-            </IconButton>
-          </span>
-        </Tooltip>
+        {/* Save button */}
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn('h-7 w-7', isDirty && 'text-primary')}
+                onClick={handleSave}
+                disabled={readOnly || isSaving || !isDirty}
+              >
+                <Save className="w-4 h-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Save ({navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+S)</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
 
-        <Divider orientation="vertical" flexItem sx={{ mx: 0.5, height: 20, alignSelf: 'center' }} />
+        <Separator orientation="vertical" className="h-5 mx-1" />
 
-        {/* Kernel 选择器 */}
+        {/* Kernel selector */}
         {!isConnected && Object.keys(kernelSpecs).length > 0 && (
-          <FormControl size="small" sx={{ minWidth: 100 }}>
-            <Select
-              value={selectedKernelSpec}
-              onChange={(e) => setSelectedKernelSpec(e.target.value)}
-              sx={{
-                height: 24,
-                fontSize: '11px',
-                bgcolor: isDarkMode ? alpha('#fff', 0.05) : alpha('#000', 0.04),
-                '& .MuiSelect-select': {
-                  py: 0.25,
-                  px: 1,
-                },
-                '& .MuiOutlinedInput-notchedOutline': {
-                  borderColor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.1),
-                },
-                '&:hover .MuiOutlinedInput-notchedOutline': {
-                  borderColor: isDarkMode ? alpha('#fff', 0.2) : alpha('#000', 0.2),
-                }
-              }}
-            >
+          <Select value={selectedKernelSpec} onValueChange={setSelectedKernelSpec}>
+            <SelectTrigger className="h-6 w-[100px] text-[11px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
               {Object.entries(kernelSpecs).map(([name, spec]) => (
-                <MenuItem key={name} value={name} sx={{ fontSize: '12px' }}>
+                <SelectItem key={name} value={name} className="text-xs">
                   {spec.display_name}
-                </MenuItem>
+                </SelectItem>
               ))}
-            </Select>
-          </FormControl>
+            </SelectContent>
+          </Select>
         )}
 
-        {/* Kernel 连接按钮 */}
-        <Tooltip title={isConnected ? 'Disconnect Kernel' : 'Connect Kernel'} arrow>
-          <IconButton
-            size="small"
-            onClick={handleConnectKernel}
-            disabled={isConnecting}
-            sx={{
-              width: 28,
-              height: 28,
-              borderRadius: '4px',
-              color: isConnected ? '#10B981' : (isDarkMode ? '#cccccc' : '#424242'),
-              '&:hover': { bgcolor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.08) }
-            }}
-          >
-            {isConnected ? <LinkIcon sx={{ fontSize: 16 }} /> : <LinkOffIcon sx={{ fontSize: 16 }} />}
-          </IconButton>
-        </Tooltip>
+        {/* Kernel connect button */}
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn('h-7 w-7', isConnected && 'text-green-500')}
+                onClick={handleConnectKernel}
+                disabled={isConnecting}
+              >
+                {isConnected ? <Link className="w-4 h-4" /> : <Unlink className="w-4 h-4" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{isConnected ? 'Disconnect Kernel' : 'Connect Kernel'}</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
 
-        {/* Kernel 状态 */}
-        <Tooltip title={`Kernel: ${kernelConfig.label}${currentKernel ? ` (${currentKernel.name})` : ''}`} arrow>
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 0.5,
-              px: 1,
-              py: 0.25,
-              borderRadius: '4px',
-              bgcolor: kernelConfig.bgColor,
-              cursor: 'default',
-              transition: 'all 0.15s',
-            }}
-          >
-            {kernelConfig.icon}
-            <Typography 
-              sx={{ 
-                fontSize: '11px',
-                fontWeight: 500,
-                color: kernelConfig.color
-              }}
-            >
-              {kernelConfig.label}
-            </Typography>
-          </Box>
-        </Tooltip>
+        {/* Kernel status */}
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className={cn(
+                'flex items-center gap-1 px-2 py-0.5 rounded cursor-default transition-colors',
+                kernelConfig.bgColor
+              )}>
+                <span className={kernelConfig.color}>{kernelConfig.icon}</span>
+                <span className={cn('text-[11px] font-medium', kernelConfig.color)}>
+                  {kernelConfig.label}
+                </span>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent>
+              Kernel: {kernelConfig.label}{currentKernel ? ` (${currentKernel.name})` : ''}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
 
-        {/* 语言显示 */}
-        <Chip
-          label={language.charAt(0).toUpperCase() + language.slice(1)}
-          size="small"
-          sx={{
-            height: 20,
-            fontSize: '11px',
-            fontWeight: 500,
-            bgcolor: isDarkMode ? alpha('#fff', 0.08) : alpha('#000', 0.06),
-            color: isDarkMode ? '#cccccc' : '#616161',
-            border: 'none',
-            '& .MuiChip-label': { px: 1 }
-          }}
-        />
-      </Box>
+        {/* Language badge */}
+        <span className={cn(
+          'h-5 px-2 text-[11px] font-medium rounded flex items-center',
+          isDarkMode ? 'bg-white/10 text-zinc-300' : 'bg-black/10 text-zinc-600'
+        )}>
+          {language.charAt(0).toUpperCase() + language.slice(1)}
+        </span>
+      </div>
 
-      {/* Cells 容器 */}
-      <Box 
-        sx={{ 
-          flex: 1, 
-          overflow: 'auto', 
-          py: 1,
-          '&::-webkit-scrollbar': {
-            width: 10
-          },
-          '&::-webkit-scrollbar-track': {
-            bgcolor: 'transparent'
-          },
-          '&::-webkit-scrollbar-thumb': {
-            bgcolor: isDarkMode ? alpha('#fff', 0.15) : alpha('#000', 0.12),
-            borderRadius: 5,
-            border: '2px solid transparent',
-            backgroundClip: 'content-box',
-            '&:hover': {
-              bgcolor: isDarkMode ? alpha('#fff', 0.25) : alpha('#000', 0.2)
-            }
-          }
-        }}
-      >
-        {/* 顶部添加按钮 */}
+      {/* Cells container */}
+      <div className="flex-1 overflow-auto py-2 custom-scrollbar">
+        {/* Top add button */}
         {!readOnly && (
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 0.5,
-              py: 0.5,
-              px: 6,
-              opacity: 0.5,
-              transition: 'opacity 0.15s',
-              '&:hover': { opacity: 1 }
-            }}
-          >
-            <Box sx={{ flex: 1, height: '1px', bgcolor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.08) }} />
+          <div className="flex items-center justify-center gap-1 py-1 px-12 opacity-50 hover:opacity-100 transition-opacity">
+            <div className={cn('flex-1 h-px', isDarkMode ? 'bg-white/10' : 'bg-black/10')} />
             <Button
-              size="small"
-              startIcon={<AddIcon sx={{ fontSize: '12px !important' }} />}
+              variant="ghost"
+              size="sm"
+              className="h-5.5 px-2 text-[11px]"
               onClick={() => handleInsertAbove(0, 'code')}
-              sx={{
-                fontSize: '11px',
-                textTransform: 'none',
-                color: 'text.secondary',
-                px: 1,
-                py: 0.25,
-                minHeight: 22,
-                borderRadius: '4px',
-                '&:hover': {
-                  bgcolor: isDarkMode ? alpha('#fff', 0.08) : alpha('#000', 0.05),
-                  color: 'primary.main'
-                }
-              }}
             >
+              <Plus className="w-3 h-3 mr-1" />
               Add Cell
             </Button>
-            <Box sx={{ flex: 1, height: '1px', bgcolor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.08) }} />
-          </Box>
+            <div className={cn('flex-1 h-px', isDarkMode ? 'bg-white/10' : 'bg-black/10')} />
+          </div>
         )}
 
         {/* Cells */}
         {cells.map((cell, index) => (
-          <NotebookCell
+          <NotebookCellComponent
             key={cell.id || index}
             cell={cell}
             index={index}
@@ -1979,10 +1556,10 @@ export const NotebookEditor: React.FC<NotebookEditorProps> = ({
           />
         ))}
 
-        {/* 底部空白区域 */}
-        <Box sx={{ height: 100 }} />
-      </Box>
-    </Box>
+        {/* Bottom spacer */}
+        <div className="h-24" />
+      </div>
+    </div>
   );
 };
 

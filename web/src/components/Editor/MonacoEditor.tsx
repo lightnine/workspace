@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Editor from '@monaco-editor/react';
-import { Box, useTheme } from '@mui/material';
+import { cn } from '@/lib/utils';
 import { useEditor } from '../../context/EditorContext';
 import { useApp } from '../../context/AppContext';
 import { NotebookEditor } from './NotebookEditor';
@@ -15,7 +15,6 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({ height = '100%' }) =
   const { t } = useTranslation();
   const { tabs, activeTabId, updateTabContent, saveFile, patchNotebookFile } = useEditor();
   const { theme: themeMode } = useApp();
-  const muiTheme = useTheme();
   const editorRef = useRef<any>(null);
   const monacoRef = useRef<any>(null);
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(true);
@@ -26,30 +25,28 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({ height = '100%' }) =
     editorRef.current = editor;
     monacoRef.current = monaco;
     
-    // 配置快捷键 Ctrl+S / Cmd+S 保存
+    // Configure keyboard shortcut Ctrl+S / Cmd+S for save
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
       if (activeTabId) {
         saveFile(activeTabId).catch(console.error);
       }
     });
 
-    // 定义自定义主题
-    const editorTheme = themeMode === 'dark' ? 'custom-dark' : 'custom-light';
-    
+    // Define custom themes
     monaco.editor.defineTheme('custom-light', {
       base: 'vs',
       inherit: true,
       rules: [],
       colors: {
-        'editor.background': muiTheme.palette.background.paper,
-        'editor.foreground': muiTheme.palette.text.primary,
-        'editorLineNumber.foreground': muiTheme.palette.text.secondary,
-        'editor.selectionBackground': muiTheme.palette.action.selected,
-        'editor.lineHighlightBackground': muiTheme.palette.action.hover,
-        'editorCursor.foreground': muiTheme.palette.primary.main,
-        'editorWhitespace.foreground': muiTheme.palette.divider,
-        'editorIndentGuide.background': muiTheme.palette.divider,
-        'editorIndentGuide.activeBackground': muiTheme.palette.text.secondary,
+        'editor.background': '#FFFFFF',
+        'editor.foreground': '#18181B',
+        'editorLineNumber.foreground': '#71717A',
+        'editor.selectionBackground': '#3B82F620',
+        'editor.lineHighlightBackground': '#F4F4F5',
+        'editorCursor.foreground': '#2563EB',
+        'editorWhitespace.foreground': '#E4E4E7',
+        'editorIndentGuide.background': '#E4E4E7',
+        'editorIndentGuide.activeBackground': '#A1A1AA',
       }
     });
 
@@ -58,23 +55,24 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({ height = '100%' }) =
       inherit: true,
       rules: [],
       colors: {
-        'editor.background': muiTheme.palette.background.paper,
-        'editor.foreground': muiTheme.palette.text.primary,
-        'editorLineNumber.foreground': muiTheme.palette.text.secondary,
-        'editor.selectionBackground': muiTheme.palette.action.selected,
-        'editor.lineHighlightBackground': muiTheme.palette.action.hover,
-        'editorCursor.foreground': muiTheme.palette.primary.main,
-        'editorWhitespace.foreground': muiTheme.palette.divider,
-        'editorIndentGuide.background': muiTheme.palette.divider,
-        'editorIndentGuide.activeBackground': muiTheme.palette.text.secondary,
+        'editor.background': '#18181B',
+        'editor.foreground': '#FAFAFA',
+        'editorLineNumber.foreground': '#71717A',
+        'editor.selectionBackground': '#3B82F630',
+        'editor.lineHighlightBackground': '#27272A',
+        'editorCursor.foreground': '#3B82F6',
+        'editorWhitespace.foreground': '#3F3F46',
+        'editorIndentGuide.background': '#3F3F46',
+        'editorIndentGuide.activeBackground': '#52525B',
       }
     });
 
-    // 应用主题
+    // Apply theme
+    const editorTheme = themeMode === 'dark' ? 'custom-dark' : 'custom-light';
     monaco.editor.setTheme(editorTheme);
   };
 
-  // 当主题改变时更新编辑器主题
+  // Update theme when it changes
   useEffect(() => {
     if (monacoRef.current) {
       const editorTheme = themeMode === 'dark' ? 'custom-dark' : 'custom-light';
@@ -110,17 +108,12 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({ height = '100%' }) =
 
   if (!activeTab) {
     return (
-      <Box
-        sx={{
-          height,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: 'text.secondary'
-        }}
+      <div 
+        className="h-full flex items-center justify-center text-muted-foreground"
+        style={{ height }}
       >
-          {t('workspace.selectFile')}
-      </Box>
+        {t('workspace.selectFile')}
+      </div>
     );
   }
 
@@ -128,7 +121,7 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({ height = '100%' }) =
   const isNotebook = activeTab.fileName.toLowerCase().endsWith('.ipynb');
 
   return (
-    <Box sx={{ height, width: '100%', bgcolor: 'background.paper' }}>
+    <div className="h-full w-full bg-background" style={{ height }}>
       {isNotebook ? (
         <NotebookEditor 
           content={activeTab.content} 
@@ -171,7 +164,6 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({ height = '100%' }) =
           }}
         />
       )}
-    </Box>
+    </div>
   );
 };
-

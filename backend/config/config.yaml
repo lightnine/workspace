@@ -35,3 +35,18 @@ log:
 kernel:
   python_path: ""  # Leave empty to auto-detect, or set to specific Python path
   execution_timeout: 300  # seconds
+  gateway:
+    enabled: false  # Set to true to enable remote gateway mode
+    url: ""  # Gateway server URL, e.g., http://gateway:8888
+    auth_token: ""  # Authentication token for gateway
+    connect_timeout: 30  # Connection timeout in seconds
+    request_timeout: 60  # Request timeout in seconds
+    ws_ping_interval: 30  # WebSocket ping interval in seconds
+    validate_cert: true  # Validate SSL certificate
+    launch_timeout: 60  # Kernel launch timeout in seconds
+    http_user: ""  # HTTP Basic Auth username (optional)
+    http_password: ""  # HTTP Basic Auth password (optional)
+    headers: ""  # Custom headers as JSON string (optional)
+    client_cert: ""  # Client certificate path (optional)
+    client_key: ""  # Client key path (optional)
+    ca_certs: ""  # CA certificates path (optional)

@@ -1,43 +1,35 @@
 import React from 'react';
-import {
-  Box,
-  Tabs,
-  Tab,
-  IconButton,
-  alpha
-} from '@mui/material';
-import { Close as CloseIcon } from '@mui/icons-material';
+import { X, Circle } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { useEditor } from '../../context/EditorContext';
-import { useApp } from '../../context/AppContext';
 
-// 文件图标颜色映射
-const getFileIconColor = (fileName: string, isDarkMode: boolean) => {
+const getFileColor = (fileName: string): string => {
   const ext = fileName.split('.').pop()?.toLowerCase();
-  const colors: Record<string, string> = {
-    'py': '#3776AB',
-    'ipynb': '#F37626',
-    'js': '#F7DF1E',
-    'ts': '#3178C6',
-    'tsx': '#3178C6',
-    'jsx': '#61DAFB',
-    'json': '#5B5B5B',
-    'md': '#083FA1',
-    'sql': '#E38C00',
-    'html': '#E34F26',
-    'css': '#1572B6',
-    'scss': '#CC6699'
-  };
-  return colors[ext || ''] || (isDarkMode ? '#A1A1AA' : '#71717A');
+  switch (ext) {
+    case 'py':
+      return 'text-blue-500';
+    case 'ipynb':
+      return 'text-orange-500';
+    case 'js':
+    case 'jsx':
+      return 'text-yellow-500';
+    case 'ts':
+    case 'tsx':
+      return 'text-blue-400';
+    case 'json':
+      return 'text-green-500';
+    case 'md':
+      return 'text-purple-500';
+    case 'sql':
+      return 'text-pink-500';
+    default:
+      return 'text-muted-foreground';
+  }
 };
 
 export const TabView: React.FC = () => {
   const { tabs, activeTabId, setActiveTabId, closeTab } = useEditor();
-  const { theme: themeMode } = useApp();
-  const isDarkMode = themeMode === 'dark';
-
-  const handleTabChange = (_event: React.SyntheticEvent, newValue: string) => {
-    setActiveTabId(newValue);
-  };
 
   const handleCloseTab = (e: React.MouseEvent, tabId: string) => {
     e.stopPropagation();
@@ -49,119 +41,51 @@ export const TabView: React.FC = () => {
   }
 
   return (
-    <Box
-      sx={{
-        borderBottom: '1px solid',
-        borderColor: 'divider',
-        bgcolor: isDarkMode ? alpha('#fff', 0.02) : 'background.paper',
-        position: 'relative'
-      }}
-    >
-      <Tabs
-        value={activeTabId || false}
-        onChange={handleTabChange}
-        variant="scrollable"
-        scrollButtons="auto"
-        sx={{
-          minHeight: 40,
-          '& .MuiTabs-indicator': {
-            height: 2,
-            borderRadius: '2px 2px 0 0',
-            bgcolor: 'primary.main'
-          },
-          '& .MuiTabs-scrollButtons': {
-            width: 28,
-            '&.Mui-disabled': {
-              opacity: 0.3
-            }
-          },
-          '& .MuiTab-root': {
-            minHeight: 40,
-            textTransform: 'none',
-            fontSize: '0.8125rem',
-            fontWeight: 500,
-            px: 1.5,
-            py: 1,
-            color: 'text.secondary',
-            borderRight: '1px solid',
-            borderColor: 'divider',
-            transition: 'all 0.15s ease',
-            '&.Mui-selected': {
-              color: 'text.primary',
-              bgcolor: isDarkMode ? alpha('#fff', 0.03) : alpha('#000', 0.02)
-            },
-            '&:hover': {
-              bgcolor: isDarkMode ? alpha('#fff', 0.05) : alpha('#000', 0.04),
-              color: 'text.primary'
-            }
-          }
-        }}
-      >
-        {tabs.map((tab) => (
-          <Tab
-            key={tab.id}
-            value={tab.id}
-            label={
-              <Box
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 1,
-                  position: 'relative'
-                }}
+    <div className="flex border-b border-border bg-background">
+      <ScrollArea className="flex-1">
+        <div className="flex">
+          {tabs.map((tab) => {
+            const isActive = tab.id === activeTabId;
+            const fileColor = getFileColor(tab.fileName);
+
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTabId(tab.id)}
+                className={cn(
+                  'group flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors min-w-0',
+                  isActive
+                    ? 'border-primary text-foreground bg-background'
+                    : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                )}
               >
-                {/* 文件类型指示点 */}
-                <Box
-                  sx={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: '2px',
-                    bgcolor: getFileIconColor(tab.fileName, isDarkMode),
-                    flexShrink: 0
-                  }}
-                />
-                <span style={{ 
-                  maxWidth: 120, 
-                  overflow: 'hidden', 
-                  textOverflow: 'ellipsis', 
-                  whiteSpace: 'nowrap' 
-                }}>
+                {/* File name with color */}
+                <span className={cn('truncate max-w-[160px]', fileColor)}>
                   {tab.fileName}
                 </span>
-                {tab.isDirty && (
-                  <Box
-                    sx={{
-                      width: 6,
-                      height: 6,
-                      borderRadius: '50%',
-                      bgcolor: 'warning.main',
-                      flexShrink: 0
-                    }}
-                  />
+
+                {/* Dirty indicator or close button */}
+                {tab.isDirty ? (
+                  <Circle className="w-2.5 h-2.5 fill-current text-primary flex-shrink-0" />
+                ) : (
+                  <span
+                    role="button"
+                    tabIndex={-1}
+                    onClick={(e) => handleCloseTab(e, tab.id)}
+                    className={cn(
+                      'p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-accent transition-all flex-shrink-0',
+                      isActive && 'opacity-60'
+                    )}
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </span>
                 )}
-                <IconButton
-                  size="small"
-                  onClick={(e) => handleCloseTab(e, tab.id)}
-                  sx={{
-                    ml: 0.5,
-                    p: 0.25,
-                    width: 18,
-                    height: 18,
-                    opacity: 0.5,
-                    borderRadius: '4px',
-                    '&:hover': {
-                      opacity: 1,
-                      bgcolor: isDarkMode ? alpha('#fff', 0.1) : alpha('#000', 0.08)
-                    }
-                  }}
-                >
-                  <CloseIcon sx={{ fontSize: 14 }} />
-                </IconButton>
-              </Box>
-            }
-          />
-        ))}
-      </Tabs>
-    </Box>
+              </button>
+            );
+          })}
+        </div>
+        <ScrollBar orientation="horizontal" />
+      </ScrollArea>
+    </div>
   );
 };

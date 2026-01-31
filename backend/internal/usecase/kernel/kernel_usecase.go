@@ -13,6 +13,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
+
+	"github.com/leondli/workspace/internal/infrastructure/config"
+	"github.com/leondli/workspace/internal/infrastructure/gateway"
 )
 
 // KernelSpec represents a kernel specification
@@ -26,12 +29,13 @@ type KernelSpec struct {
 
 // KernelInfo represents a running kernel instance
 type KernelInfo struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Status      string    `json:"status"` // starting, idle, busy, dead
-	ExecutionCount int    `json:"execution_count"`
-	LastActivity time.Time `json:"last_activity"`
-	UserID      string    `json:"user_id"`
+	ID             string    `json:"id"`
+	Name           string    `json:"name"`
+	Status         string    `json:"status"` // starting, idle, busy, dead
+	ExecutionCount int       `json:"execution_count"`
+	LastActivity   time.Time `json:"last_activity"`
+	UserID         string    `json:"user_id"`
+	IsGateway      bool      `json:"is_gateway"` // Whether this kernel is managed by gateway
 }
 
 // KernelStatus represents the current status of a kernel
@@ -76,17 +80,19 @@ type KernelInstance struct {
 
 // UseCase handles kernel-related business logic
 type UseCase struct {
-	kernels      sync.Map // map[string]*KernelInstance
-	kernelSpecs  map[string]*KernelSpec
-	pythonPath   string
-	workspacePath string
+	kernels        sync.Map // map[string]*KernelInstance (for local kernels)
+	kernelSpecs    map[string]*KernelSpec
+	pythonPath     string
+	workspacePath  string
+	gatewayEnabled bool
+	gatewayManager *gateway.KernelManager
 }
 
 // NewUseCase creates a new kernel use case
 func NewUseCase(pythonPath, workspacePath string) *UseCase {
 	uc := &UseCase{
-		kernelSpecs:  make(map[string]*KernelSpec),
-		pythonPath:   pythonPath,
+		kernelSpecs:   make(map[string]*KernelSpec),
+		pythonPath:    pythonPath,
 		workspacePath: workspacePath,
 	}
 
@@ -94,6 +100,53 @@ func NewUseCase(pythonPath, workspacePath string) *UseCase {
 	uc.initKernelSpecs()
 
 	return uc
+}
+
+// NewUseCaseWithGateway creates a new kernel use case with gateway support
+func NewUseCaseWithGateway(pythonPath, workspacePath string, gatewayCfg *config.GatewayConfig) (*UseCase, error) {
+	uc := &UseCase{
+		kernelSpecs:   make(map[string]*KernelSpec),
+		pythonPath:    pythonPath,
+		workspacePath: workspacePath,
+	}
+
+	// Initialize gateway if enabled
+	if gatewayCfg != nil && gatewayCfg.Enabled {
+		client, err := gateway.NewClient(gatewayCfg)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create gateway client: %w", err)
+		}
+
+		// Ping gateway to verify connection
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		if err := client.Ping(ctx); err != nil {
+			log.Warn().Err(err).Str("gateway_url", gatewayCfg.URL).Msg("Gateway is not reachable, falling back to local kernel mode")
+		} else {
+			uc.gatewayEnabled = true
+			uc.gatewayManager = gateway.NewKernelManager(client)
+			log.Info().Str("gateway_url", gatewayCfg.URL).Msg("Gateway mode enabled")
+		}
+	}
+
+	// Initialize default kernel specs (for local mode fallback)
+	uc.initKernelSpecs()
+
+	return uc, nil
+}
+
+// IsGatewayEnabled returns whether gateway mode is enabled
+func (uc *UseCase) IsGatewayEnabled() bool {
+	return uc.gatewayEnabled
+}
+
+// GetGatewayURL returns the gateway URL if enabled
+func (uc *UseCase) GetGatewayURL() string {
+	if uc.gatewayManager != nil {
+		return uc.gatewayManager.GetClient().GetBaseURL()
+	}
+	return ""
 }
 
 // initKernelSpecs initializes the available kernel specifications
@@ -127,9 +180,28 @@ func (uc *UseCase) initKernelSpecs() {
 
 // ListKernelSpecs returns available kernel specifications
 func (uc *UseCase) ListKernelSpecs(ctx context.Context) (map[string]*KernelSpec, error) {
+	// If gateway is enabled, fetch specs from gateway
+	if uc.gatewayEnabled && uc.gatewayManager != nil {
+		gatewaySpecs, err := uc.gatewayManager.GetClient().GetKernelSpecs(ctx)
+		if err != nil {
+			log.Warn().Err(err).Msg("Failed to get kernel specs from gateway, using local specs")
+		} else {
+			result := make(map[string]*KernelSpec)
+			for name, spec := range gatewaySpecs {
+				result[name] = &KernelSpec{
+					Name:        spec.Name,
+					DisplayName: spec.DisplayName,
+					Language:    spec.Language,
+				}
+			}
+			return result, nil
+		}
+	}
+
+	// Fall back to local specs
 	// Also try to discover installed kernels from Jupyter
 	discovered := uc.discoverJupyterKernels()
-	
+
 	// Merge discovered kernels with default specs
 	result := make(map[string]*KernelSpec)
 	for k, v := range uc.kernelSpecs {
@@ -186,6 +258,35 @@ func (uc *UseCase) discoverJupyterKernels() map[string]*KernelSpec {
 
 // StartKernel starts a new kernel instance
 func (uc *UseCase) StartKernel(ctx context.Context, specName string, userID string) (*KernelInfo, error) {
+	// If gateway is enabled, start kernel on gateway
+	if uc.gatewayEnabled && uc.gatewayManager != nil {
+		return uc.startGatewayKernel(ctx, specName, userID)
+	}
+
+	// Fall back to local kernel
+	return uc.startLocalKernel(ctx, specName, userID)
+}
+
+// startGatewayKernel starts a kernel on the remote gateway
+func (uc *UseCase) startGatewayKernel(ctx context.Context, specName string, userID string) (*KernelInfo, error) {
+	gk, err := uc.gatewayManager.StartKernel(ctx, specName, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &KernelInfo{
+		ID:             gk.ID,
+		Name:           gk.Name,
+		Status:         gk.Status,
+		ExecutionCount: 0,
+		LastActivity:   gk.LastActivity,
+		UserID:         userID,
+		IsGateway:      true,
+	}, nil
+}
+
+// startLocalKernel starts a kernel locally
+func (uc *UseCase) startLocalKernel(ctx context.Context, specName string, userID string) (*KernelInfo, error) {
 	spec, exists := uc.kernelSpecs[specName]
 	if !exists {
 		// Try discovered specs
@@ -959,6 +1060,14 @@ func (uc *UseCase) readKernelOutput(instance *KernelInstance) {
 
 // StopKernel stops a running kernel
 func (uc *UseCase) StopKernel(ctx context.Context, kernelID string) error {
+	// Try gateway first if enabled
+	if uc.gatewayEnabled && uc.gatewayManager != nil {
+		if _, exists := uc.gatewayManager.GetKernel(kernelID); exists {
+			return uc.gatewayManager.StopKernel(ctx, kernelID)
+		}
+	}
+
+	// Fall back to local kernel
 	value, exists := uc.kernels.Load(kernelID)
 	if !exists {
 		return fmt.Errorf("kernel not found: %s", kernelID)
@@ -1004,6 +1113,14 @@ func (uc *UseCase) StopKernel(ctx context.Context, kernelID string) error {
 
 // RestartKernel restarts a kernel
 func (uc *UseCase) RestartKernel(ctx context.Context, kernelID string) error {
+	// Try gateway first if enabled
+	if uc.gatewayEnabled && uc.gatewayManager != nil {
+		if _, exists := uc.gatewayManager.GetKernel(kernelID); exists {
+			return uc.gatewayManager.RestartKernel(ctx, kernelID)
+		}
+	}
+
+	// Fall back to local kernel
 	value, exists := uc.kernels.Load(kernelID)
 	if !exists {
 		return fmt.Errorf("kernel not found: %s", kernelID)
@@ -1037,6 +1154,14 @@ func (uc *UseCase) RestartKernel(ctx context.Context, kernelID string) error {
 
 // InterruptKernel interrupts a running kernel
 func (uc *UseCase) InterruptKernel(ctx context.Context, kernelID string) error {
+	// Try gateway first if enabled
+	if uc.gatewayEnabled && uc.gatewayManager != nil {
+		if _, exists := uc.gatewayManager.GetKernel(kernelID); exists {
+			return uc.gatewayManager.InterruptKernel(ctx, kernelID)
+		}
+	}
+
+	// Fall back to local kernel
 	value, exists := uc.kernels.Load(kernelID)
 	if !exists {
 		return fmt.Errorf("kernel not found: %s", kernelID)
@@ -1054,6 +1179,21 @@ func (uc *UseCase) InterruptKernel(ctx context.Context, kernelID string) error {
 
 // GetKernelStatus returns the status of a kernel
 func (uc *UseCase) GetKernelStatus(ctx context.Context, kernelID string) (*KernelStatus, error) {
+	// Try gateway first if enabled
+	if uc.gatewayEnabled && uc.gatewayManager != nil {
+		if gk, exists := uc.gatewayManager.GetKernel(kernelID); exists {
+			return &KernelStatus{
+				ID:               kernelID,
+				Status:           gk.Status,
+				ExecutionState:   gk.ExecutionState,
+				ExecutionCount:   0,
+				LastActivity:     gk.LastActivity,
+				ConnectionStatus: "connected",
+			}, nil
+		}
+	}
+
+	// Fall back to local kernel
 	value, exists := uc.kernels.Load(kernelID)
 	if !exists {
 		return nil, fmt.Errorf("kernel not found: %s", kernelID)
@@ -1083,6 +1223,23 @@ func (uc *UseCase) GetKernelStatus(ctx context.Context, kernelID string) (*Kerne
 func (uc *UseCase) ListKernels(ctx context.Context, userID string) ([]*KernelInfo, error) {
 	var kernels []*KernelInfo
 
+	// Get gateway kernels if enabled
+	if uc.gatewayEnabled && uc.gatewayManager != nil {
+		gatewayKernels := uc.gatewayManager.ListKernels(userID)
+		for _, gk := range gatewayKernels {
+			kernels = append(kernels, &KernelInfo{
+				ID:             gk.ID,
+				Name:           gk.Name,
+				Status:         gk.Status,
+				ExecutionCount: 0,
+				LastActivity:   gk.LastActivity,
+				UserID:         gk.UserID,
+				IsGateway:      true,
+			})
+		}
+	}
+
+	// Also get local kernels
 	uc.kernels.Range(func(key, value interface{}) bool {
 		instance := value.(*KernelInstance)
 		if instance.Info.UserID == userID {
@@ -1096,6 +1253,33 @@ func (uc *UseCase) ListKernels(ctx context.Context, userID string) ([]*KernelInf
 
 // RegisterOutputChannel registers a channel to receive kernel output
 func (uc *UseCase) RegisterOutputChannel(kernelID, sessionID string, ch chan *KernelMessage) {
+	// Try gateway first if enabled
+	if uc.gatewayEnabled && uc.gatewayManager != nil {
+		if _, exists := uc.gatewayManager.GetKernel(kernelID); exists {
+			// Create adapter channel for gateway
+			gatewayCh := make(chan *gateway.KernelOutputMessage, 100)
+			uc.gatewayManager.RegisterOutputChannel(kernelID, sessionID, gatewayCh)
+
+			// Start goroutine to convert gateway messages to KernelMessage
+			go func() {
+				for msg := range gatewayCh {
+					if msg == nil {
+						return
+					}
+					ch <- &KernelMessage{
+						MsgID:    msg.MsgID,
+						MsgType:  msg.MsgType,
+						ParentID: msg.ParentID,
+						Content:  msg.Content,
+						Metadata: msg.Metadata,
+					}
+				}
+			}()
+			return
+		}
+	}
+
+	// Fall back to local kernel
 	value, exists := uc.kernels.Load(kernelID)
 	if !exists {
 		return
@@ -1109,6 +1293,15 @@ func (uc *UseCase) RegisterOutputChannel(kernelID, sessionID string, ch chan *Ke
 
 // UnregisterOutputChannel unregisters an output channel
 func (uc *UseCase) UnregisterOutputChannel(kernelID, sessionID string) {
+	// Try gateway first if enabled
+	if uc.gatewayEnabled && uc.gatewayManager != nil {
+		if _, exists := uc.gatewayManager.GetKernel(kernelID); exists {
+			uc.gatewayManager.UnregisterOutputChannel(kernelID, sessionID)
+			return
+		}
+	}
+
+	// Fall back to local kernel
 	value, exists := uc.kernels.Load(kernelID)
 	if !exists {
 		return
@@ -1122,6 +1315,14 @@ func (uc *UseCase) UnregisterOutputChannel(kernelID, sessionID string) {
 
 // ExecuteCode executes code on a kernel
 func (uc *UseCase) ExecuteCode(ctx context.Context, kernelID, sessionID string, req *ExecuteRequest) error {
+	// Try gateway first if enabled
+	if uc.gatewayEnabled && uc.gatewayManager != nil {
+		if _, exists := uc.gatewayManager.GetKernel(kernelID); exists {
+			return uc.gatewayManager.ExecuteCode(ctx, kernelID, req.Code, req.MsgID, req.Silent, req.StoreHistory)
+		}
+	}
+
+	// Fall back to local kernel
 	value, exists := uc.kernels.Load(kernelID)
 	if !exists {
 		return fmt.Errorf("kernel not found: %s", kernelID)

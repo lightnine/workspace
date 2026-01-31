@@ -5,11 +5,13 @@ import { setAccessToken, setRefreshToken, clearTokens, getAccessToken } from '..
 import { login as loginApi, getCurrentUser } from '../services/auth';
 
 type Language = 'zh' | 'en';
+type Theme = 'light' | 'dark';
 
 interface AppContextType {
   user: UserResponse | null;
   setUser: (user: UserResponse | null) => void;
-  theme: 'light' | 'dark';
+  theme: Theme;
+  setTheme: (theme: Theme) => void;
   toggleTheme: () => void;
   language: Language;
   setLanguage: (lang: Language) => void;
@@ -23,14 +25,30 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { i18n } = useTranslation();
   const [user, setUserState] = useState<UserResponse | null>(null);
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [theme, setThemeState] = useState<Theme>(() => {
+    const stored = localStorage.getItem('theme') as Theme | null;
+    if (stored) return stored;
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  });
   const [language, setLanguageState] = useState<Language>(
     (localStorage.getItem('i18nextLng') as Language) || 'zh'
   );
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
+  // Apply theme to document
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.remove('light', 'dark');
+    root.classList.add(theme);
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  const setTheme = (newTheme: Theme) => {
+    setThemeState(newTheme);
+  };
+
   const toggleTheme = () => {
-    setTheme(prev => prev === 'light' ? 'dark' : 'light');
+    setThemeState(prev => prev === 'light' ? 'dark' : 'light');
   };
 
   const setLanguage = (lang: Language) => {
@@ -83,7 +101,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     <AppContext.Provider value={{ 
       user, 
       setUser, 
-      theme, 
+      theme,
+      setTheme,
       toggleTheme, 
       language, 
       setLanguage,

@@ -1,6 +1,7 @@
-import { Component, ErrorInfo, ReactNode } from 'react';
-import { Box, Typography, Button, Paper } from '@mui/material';
-import { ErrorOutline as ErrorIcon } from '@mui/icons-material';
+import React, { Component, ErrorInfo, ReactNode } from 'react';
+import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 
 interface Props {
   children: ReactNode;
@@ -8,13 +9,12 @@ interface Props {
 
 interface State {
   hasError: boolean;
-  error: Error | null;
+  error?: Error;
 }
 
 export class ErrorBoundary extends Component<Props, State> {
   public state: State = {
-    hasError: false,
-    error: null
+    hasError: false
   };
 
   public static getDerivedStateFromError(error: Error): State {
@@ -22,38 +22,31 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('错误边界捕获到错误:', error, errorInfo);
+    console.error('Uncaught error:', error, errorInfo);
   }
 
-  private handleReset = () => {
-    this.setState({ hasError: false, error: null });
+  private handleReload = () => {
+    window.location.reload();
   };
 
   public render() {
     if (this.state.hasError) {
       return (
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            minHeight: '100vh',
-            p: 3
-          }}
-        >
-          <Paper sx={{ p: 4, maxWidth: 600, textAlign: 'center' }}>
-            <ErrorIcon sx={{ fontSize: 64, color: 'error.main', mb: 2 }} />
-            <Typography variant="h5" gutterBottom>
-              出现了一些问题
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-              {this.state.error?.message || '未知错误'}
-            </Typography>
-            <Button variant="contained" onClick={this.handleReset}>
-              重试
-            </Button>
-          </Paper>
-        </Box>
+        <div className="min-h-screen flex items-center justify-center bg-background p-4">
+          <Card className="w-full max-w-md">
+            <CardContent className="pt-6 text-center">
+              <AlertTriangle className="w-12 h-12 text-destructive mx-auto mb-4" />
+              <h2 className="text-lg font-semibold mb-2">Something went wrong</h2>
+              <p className="text-sm text-muted-foreground mb-4">
+                {this.state.error?.message || 'An unexpected error occurred'}
+              </p>
+              <Button onClick={this.handleReload}>
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Reload Page
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
       );
     }
 

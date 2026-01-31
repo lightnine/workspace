@@ -1,30 +1,24 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  Box,
-  TextField,
-  InputAdornment,
-  Paper,
-  List,
-  ListItem,
-  ListItemButton,
-  ListItemText,
-  ListItemIcon,
-  Typography,
-  IconButton,
-  ClickAwayListener
-} from '@mui/material';
-import { Search as SearchIcon, Folder as FolderIcon, Close as CloseIcon } from '@mui/icons-material';
+import { Search, X, Folder, FileText, File } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { cn } from '@/lib/utils';
 import { SearchSuggestion, FileType } from '../../types';
 import { search } from '../../services/api';
 
 interface SearchBarProps {
   onSelectResult?: (suggestion: SearchSuggestion) => void;
-  defaultExpanded?: boolean; // 是否默认展开
-  disableClose?: boolean; // 是否禁用关闭功能（用于 Search 页面）
+  defaultExpanded?: boolean;
+  disableClose?: boolean;
 }
 
-export const SearchBar: React.FC<SearchBarProps> = ({ onSelectResult, defaultExpanded = false, disableClose = false }) => {
+export const SearchBar: React.FC<SearchBarProps> = ({ 
+  onSelectResult, 
+  defaultExpanded = false, 
+  disableClose = false 
+}) => {
   const { t } = useTranslation();
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [query, setQuery] = useState('');
@@ -32,22 +26,17 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onSelectResult, defaultExp
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (query.trim().length > 0) {
       setLoading(true);
       const timer = setTimeout(async () => {
-        try {
-          const results = await search(query);
-          setSuggestions(results);
-          setShowSuggestions(true);
-        } catch (error) {
-          console.error('搜索失败:', error);
-          setSuggestions([]);
-        } finally {
-          setLoading(false);
-        }
-      }, 300); // 防抖
+        const results = await search(query);
+        setSuggestions(results);
+        setShowSuggestions(true);
+        setLoading(false);
+      }, 300);
 
       return () => clearTimeout(timer);
     } else {
@@ -56,13 +45,11 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onSelectResult, defaultExp
     }
   }, [query]);
 
-  // 处理 ESC 键关闭
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isExpanded) {
         handleClose();
       }
-      // Ctrl+K / Cmd+K 打开搜索
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
         e.preventDefault();
         if (!isExpanded) {
@@ -75,19 +62,33 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onSelectResult, defaultExp
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isExpanded]);
 
-  // 展开时自动聚焦输入框
   useEffect(() => {
     if (isExpanded && inputRef.current) {
       inputRef.current.focus();
     }
   }, [isExpanded]);
 
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        if (!disableClose) {
+          handleClose();
+        } else {
+          setShowSuggestions(false);
+        }
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [disableClose]);
+
   const handleExpand = () => {
     setIsExpanded(true);
   };
 
   const handleClose = () => {
-    if (disableClose) return; // 如果禁用关闭，则不执行关闭操作
+    if (disableClose) return;
     setIsExpanded(false);
     setQuery('');
     setShowSuggestions(false);
@@ -103,133 +104,86 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onSelectResult, defaultExp
     onSelectResult?.(suggestion);
   };
 
-  const getTypeIcon = (_type: FileType) => {
-    return <FolderIcon />;
+  const getTypeIcon = (type: FileType) => {
+    switch (type) {
+      case 'directory':
+        return <Folder className="w-4 h-4 text-blue-500" />;
+      case 'notebook':
+        return <FileText className="w-4 h-4 text-orange-500" />;
+      default:
+        return <File className="w-4 h-4 text-muted-foreground" />;
+    }
   };
 
-  // 如果未展开，只显示搜索图标按钮
   if (!isExpanded) {
     return (
-      <IconButton
+      <Button
+        variant="ghost"
+        size="icon"
         onClick={handleExpand}
-        sx={{
-          color: 'text.secondary',
-          '&:hover': {
-            color: 'primary.main',
-            bgcolor: 'action.hover'
-          }
-        }}
+        className="text-muted-foreground hover:text-primary"
         aria-label={t('common.search')}
       >
-        <SearchIcon />
-      </IconButton>
+        <Search className="w-5 h-5" />
+      </Button>
     );
   }
 
-  // 展开状态：显示完整搜索框
-  const searchBox = (
-    <Box sx={{ position: 'relative', width: '100%', maxWidth: disableClose ? '100%' : 600 }}>
-      <TextField
-        inputRef={inputRef}
-        fullWidth
-        placeholder={t('search.placeholder')}
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        onFocus={() => {
-          if (suggestions.length > 0) setShowSuggestions(true);
-        }}
-        InputProps={{
-          startAdornment: (
-            <InputAdornment position="start">
-              <SearchIcon />
-            </InputAdornment>
-          ),
-          ...(disableClose ? {} : {
-            endAdornment: (
-              <InputAdornment position="end">
-                <IconButton
-                  size="small"
-                  onClick={handleClose}
-                  sx={{ mr: -1 }}
-                  aria-label={t('common.close')}
-                >
-                  <CloseIcon fontSize="small" />
-                </IconButton>
-              </InputAdornment>
-            )
-          })
-        }}
-          sx={{
-            backgroundColor: 'background.paper',
-            '& .MuiOutlinedInput-root': {
-              borderRadius: 2,
-              '&:hover fieldset': {
-                borderColor: 'primary.main'
-              },
-              '&.Mui-focused fieldset': {
-                borderColor: 'primary.main',
-                borderWidth: 2
-              }
-            }
-          }}
-        />
-      {showSuggestions && suggestions.length > 0 && (
-        <Paper
-          sx={{
-            position: 'absolute',
-            top: '100%',
-            left: 0,
-            right: 0,
-            mt: 1,
-            maxHeight: 400,
-            overflow: 'auto',
-            zIndex: 1000,
-            boxShadow: 3
-          }}
-        >
-          <List dense>
-            {suggestions.map((suggestion) => (
-              <ListItem key={suggestion.id} disablePadding>
-                <ListItemButton onClick={() => handleSelect(suggestion)}>
-                  <ListItemIcon>{getTypeIcon(suggestion.type)}</ListItemIcon>
-                  <ListItemText
-                    primary={suggestion.name}
-                    secondary={suggestion.path}
-                  />
-                </ListItemButton>
-              </ListItem>
-            ))}
-          </List>
-        </Paper>
-      )}
-      {loading && (
-        <Paper
-          sx={{
-            position: 'absolute',
-            top: '100%',
-            left: 0,
-            right: 0,
-            mt: 1,
-            p: 2,
-            zIndex: 1000
-          }}
-        >
-          <Typography variant="body2" color="text.secondary">
-            {t('search.searching')}
-          </Typography>
-        </Paper>
-      )}
-    </Box>
-  );
-
-  // 如果禁用关闭，则不使用 ClickAwayListener
-  if (disableClose) {
-    return searchBox;
-  }
-
   return (
-    <ClickAwayListener onClickAway={handleClose}>
-      {searchBox}
-    </ClickAwayListener>
+    <div ref={containerRef} className={cn('relative w-full', disableClose ? '' : 'max-w-[600px]')}>
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <Input
+          ref={inputRef}
+          type="text"
+          placeholder={t('search.placeholder')}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onFocus={() => {
+            if (suggestions.length > 0) setShowSuggestions(true);
+          }}
+          className="pl-9 pr-9"
+        />
+        {!disableClose && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleClose}
+            className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
+            aria-label={t('common.close')}
+          >
+            <X className="w-4 h-4" />
+          </Button>
+        )}
+      </div>
+
+      {showSuggestions && suggestions.length > 0 && (
+        <div className="absolute top-full left-0 right-0 mt-1 z-50 rounded-md border bg-popover shadow-lg">
+          <ScrollArea className="max-h-[400px]">
+            <div className="p-1">
+              {suggestions.map((suggestion) => (
+                <button
+                  key={suggestion.id}
+                  onClick={() => handleSelect(suggestion)}
+                  className="w-full flex items-center gap-3 px-3 py-2 rounded-sm text-left hover:bg-accent transition-colors"
+                >
+                  {getTypeIcon(suggestion.type)}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium truncate">{suggestion.name}</div>
+                    <div className="text-xs text-muted-foreground truncate">{suggestion.path}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </ScrollArea>
+        </div>
+      )}
+
+      {loading && (
+        <div className="absolute top-full left-0 right-0 mt-1 z-50 rounded-md border bg-popover shadow-lg p-4">
+          <span className="text-sm text-muted-foreground">{t('search.searching')}</span>
+        </div>
+      )}
+    </div>
   );
 };

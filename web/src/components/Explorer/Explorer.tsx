@@ -1,50 +1,46 @@
 import React, { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
-  Box,
-  List,
-  ListItem,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
-  IconButton,
-  Menu,
-  MenuItem,
-  TextField,
   Dialog,
-  DialogTitle,
   DialogContent,
-  DialogActions,
-  Button,
-  Typography,
-  alpha,
-  useTheme,
-  Collapse,
-  Snackbar,
-  Alert,
-  CircularProgress,
-  Divider
-} from '@mui/material';
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
-  Folder as FolderIcon,
-  FolderOpen as FolderOpenIcon,
-  InsertDriveFile as FileIcon,
-  MoreVert as MoreVertIcon,
-  CreateNewFolder as CreateFolderIcon,
-  NoteAdd as CreateFileIcon,
-  Edit as EditIcon,
-  Delete as DeleteIcon,
-  ChevronRight as ChevronRightIcon,
-  ExpandMore as ExpandMoreIcon,
-  Description as NotebookIcon,
-  Code as CodeIcon,
-  DataObject as JsonIcon,
-  Storage as SqlIcon,
-  Article as MarkdownIcon,
-  DriveFileMove as MoveIcon,
-  ContentCopy as CopyIcon,
-  Home as HomeIcon
-} from '@mui/icons-material';
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import {
+  Folder,
+  FolderOpen,
+  File,
+  MoreVertical,
+  FolderPlus,
+  FilePlus,
+  Pencil,
+  Trash2,
+  ChevronRight,
+  ChevronDown,
+  FileCode,
+  FileJson,
+  FileText,
+  Database,
+  Book,
+  Move,
+  Copy,
+  Home,
+  Loader2,
+} from 'lucide-react';
 import { FileItem } from '../../types';
 import { useWorkspace } from '../../context/WorkspaceContext';
 import { useEditor } from '../../context/EditorContext';
@@ -57,62 +53,87 @@ const getFileIcon = (fileName: string, isDarkMode: boolean) => {
   
   const iconConfig: Record<string, { icon: React.ReactNode; color: string }> = {
     'py': { 
-      icon: <CodeIcon sx={{ fontSize: 16 }} />, 
+      icon: <FileCode className="w-4 h-4" />, 
       color: '#3776AB' 
     },
     'ipynb': { 
-      icon: <NotebookIcon sx={{ fontSize: 16 }} />, 
+      icon: <Book className="w-4 h-4" />, 
       color: '#F37626' 
     },
     'js': { 
-      icon: <CodeIcon sx={{ fontSize: 16 }} />, 
+      icon: <FileCode className="w-4 h-4" />, 
       color: '#F7DF1E' 
     },
     'ts': { 
-      icon: <CodeIcon sx={{ fontSize: 16 }} />, 
+      icon: <FileCode className="w-4 h-4" />, 
       color: '#3178C6' 
     },
     'tsx': { 
-      icon: <CodeIcon sx={{ fontSize: 16 }} />, 
+      icon: <FileCode className="w-4 h-4" />, 
       color: '#3178C6' 
     },
     'jsx': { 
-      icon: <CodeIcon sx={{ fontSize: 16 }} />, 
+      icon: <FileCode className="w-4 h-4" />, 
       color: '#61DAFB' 
     },
     'json': { 
-      icon: <JsonIcon sx={{ fontSize: 16 }} />, 
+      icon: <FileJson className="w-4 h-4" />, 
       color: isDarkMode ? '#A1A1AA' : '#5B5B5B' 
     },
     'md': { 
-      icon: <MarkdownIcon sx={{ fontSize: 16 }} />, 
+      icon: <FileText className="w-4 h-4" />, 
       color: '#083FA1' 
     },
     'sql': { 
-      icon: <SqlIcon sx={{ fontSize: 16 }} />, 
+      icon: <Database className="w-4 h-4" />, 
       color: '#E38C00' 
     }
   };
   
   return iconConfig[ext || ''] || { 
-    icon: <FileIcon sx={{ fontSize: 16 }} />, 
+    icon: <File className="w-4 h-4" />, 
     color: isDarkMode ? '#A1A1AA' : '#71717A' 
   };
 };
 
+// Toast notification component
+const Toast: React.FC<{
+  open: boolean;
+  message: string;
+  severity: 'success' | 'error' | 'info';
+  onClose: () => void;
+}> = ({ open, message, severity, onClose }) => {
+  React.useEffect(() => {
+    if (open) {
+      const timer = setTimeout(onClose, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  const bgColor = {
+    success: 'bg-green-500',
+    error: 'bg-red-500',
+    info: 'bg-blue-500',
+  }[severity];
+
+  return (
+    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-4">
+      <div className={cn('px-4 py-2 rounded-lg text-white shadow-lg', bgColor)}>
+        {message}
+      </div>
+    </div>
+  );
+};
+
 export const Explorer: React.FC = () => {
   const { t } = useTranslation();
-  const theme = useTheme();
   const { theme: themeMode } = useApp();
   const isDarkMode = themeMode === 'dark';
   
   const { fileTree, expandedNodes, setExpandedNodes, selectedNodeId, setSelectedNodeId, refreshFileTree, loading } = useWorkspace();
   const { openFile, closeTab, tabs } = useEditor();
-  const [contextMenu, setContextMenu] = useState<{
-    mouseX: number;
-    mouseY: number;
-    item: FileItem | null;
-  } | null>(null);
   const [renameDialog, setRenameDialog] = useState<{ open: boolean; item: FileItem | null }>({ open: false, item: null });
   const [newName, setNewName] = useState('');
   const [createDialog, setCreateDialog] = useState<{ open: boolean; type: 'file' | 'directory' | null; parentId?: number }>({ open: false, type: null });
@@ -126,23 +147,6 @@ export const Explorer: React.FC = () => {
   // 拖拽状态
   const [draggedItem, setDraggedItem] = useState<FileItem | null>(null);
   const [dragOverItem, setDragOverItem] = useState<number | null>(null);
-
-  const handleContextMenu = (event: React.MouseEvent, item: FileItem) => {
-    event.preventDefault();
-    setContextMenu(
-      contextMenu === null
-        ? {
-            mouseX: event.clientX + 2,
-            mouseY: event.clientY - 6,
-            item
-          }
-        : null
-    );
-  };
-
-  const handleCloseContextMenu = () => {
-    setContextMenu(null);
-  };
 
   const toggleExpand = (itemId: number) => {
     const newExpanded = new Set(expandedNodes);
@@ -172,7 +176,7 @@ export const Explorer: React.FC = () => {
       if (type === 'directory') {
         await createDirectory(name, parentId);
       } else {
-        await createFile(name, '', parentId); // 创建空文件
+        await createFile(name, '', parentId);
       }
       await refreshFileTree();
       setCreateDialog({ open: false, type: null });
@@ -322,7 +326,7 @@ export const Explorer: React.FC = () => {
 
     setOperationLoading(true);
     try {
-      await moveObject(draggedItem.id, undefined); // undefined 表示移动到根目录
+      await moveObject(draggedItem.id, undefined);
       await refreshFileTree();
       setSnackbar({ open: true, message: t('explorer.moveSuccess'), severity: 'success' });
     } catch (error) {
@@ -341,55 +345,42 @@ export const Explorer: React.FC = () => {
       .map(item => {
         const isExpanded = expandedFolders.has(item.id);
         const isSelected = selectedTargetFolder === item.id;
-        const isDisabled = moveDialog.item?.id === item.id; // 不能移动到自己
+        const isDisabled = moveDialog.item?.id === item.id;
 
         return (
-          <React.Fragment key={item.id}>
-            <ListItem disablePadding sx={{ pl: level * 2 }}>
-              <ListItemButton
-                selected={isSelected}
-                disabled={isDisabled}
-                onClick={() => {
-                  setSelectedTargetFolder(item.id);
-                  if (item.children?.some(c => c.type === 'directory')) {
-                    const newExpanded = new Set(expandedFolders);
-                    if (newExpanded.has(item.id)) {
-                      newExpanded.delete(item.id);
-                    } else {
-                      newExpanded.add(item.id);
-                    }
-                    setExpandedFolders(newExpanded);
+          <div key={item.id}>
+            <button
+              className={cn(
+                'w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-colors',
+                'hover:bg-accent',
+                isSelected && 'bg-primary/10',
+                isDisabled && 'opacity-50 cursor-not-allowed'
+              )}
+              style={{ paddingLeft: `${level * 16 + 8}px` }}
+              disabled={isDisabled}
+              onClick={() => {
+                setSelectedTargetFolder(item.id);
+                if (item.children?.some(c => c.type === 'directory')) {
+                  const newExpanded = new Set(expandedFolders);
+                  if (newExpanded.has(item.id)) {
+                    newExpanded.delete(item.id);
+                  } else {
+                    newExpanded.add(item.id);
                   }
-                }}
-                sx={{
-                  py: 0.5,
-                  borderRadius: '6px',
-                  mx: 0.5,
-                  '&.Mui-selected': {
-                    bgcolor: alpha(theme.palette.primary.main, 0.15)
-                  }
-                }}
-              >
-                <ListItemIcon sx={{ minWidth: 28 }}>
-                  {item.children?.some(c => c.type === 'directory') && (
-                    isExpanded ? <ExpandMoreIcon sx={{ fontSize: 16 }} /> : <ChevronRightIcon sx={{ fontSize: 16 }} />
-                  )}
-                </ListItemIcon>
-                <ListItemIcon sx={{ minWidth: 28 }}>
-                  <FolderIcon sx={{ fontSize: 18, color: '#F59E0B' }} />
-                </ListItemIcon>
-                <ListItemText 
-                  primary={item.name} 
-                  primaryTypographyProps={{ fontSize: '0.875rem' }}
-                />
-              </ListItemButton>
-            </ListItem>
+                  setExpandedFolders(newExpanded);
+                }
+              }}
+            >
+              {item.children?.some(c => c.type === 'directory') && (
+                isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />
+              )}
+              <Folder className="w-4 h-4 text-amber-500" />
+              <span className="truncate">{item.name}</span>
+            </button>
             {isExpanded && item.children && (
-              <Collapse in={isExpanded}>
-                {renderFolderTree(item.children, level + 1)}
-              </Collapse>
+              <div>{renderFolderTree(item.children, level + 1)}</div>
             )}
-          </React.Fragment>
+          </div>
         );
       });
   };
@@ -402,165 +393,163 @@ export const Explorer: React.FC = () => {
     const isDragOver = dragOverItem === item.id;
     const isDragging = draggedItem?.id === item.id;
 
+    const handleContextAction = (action: string) => {
+      switch (action) {
+        case 'newFile':
+          setCreateDialog({ open: true, type: 'file', parentId: item.id });
+          setNewName('');
+          break;
+        case 'newFolder':
+          setCreateDialog({ open: true, type: 'directory', parentId: item.id });
+          setNewName('');
+          break;
+        case 'rename':
+          setRenameDialog({ open: true, item });
+          setNewName(item.name);
+          break;
+        case 'move':
+          setMoveDialog({ open: true, item, mode: 'move' });
+          setSelectedTargetFolder(null);
+          setExpandedFolders(new Set());
+          break;
+        case 'copy':
+          setMoveDialog({ open: true, item, mode: 'copy' });
+          setSelectedTargetFolder(null);
+          setExpandedFolders(new Set());
+          break;
+        case 'delete':
+          setDeleteDialog({ open: true, item });
+          break;
+      }
+    };
+
     return (
-      <React.Fragment key={item.id}>
-        <ListItem
-          disablePadding
-          onContextMenu={(e) => handleContextMenu(e, item)}
-          draggable
-          onDragStart={(e) => handleDragStart(e, item)}
-          onDragOver={(e) => handleDragOver(e, item)}
-          onDragLeave={handleDragLeave}
-          onDrop={(e) => handleDrop(e, item)}
-          onDragEnd={handleDragEnd}
-          sx={{ 
-            pl: level * 1.5,
-            opacity: isDragging ? 0.5 : 1,
-            '&:hover .item-actions': {
-              opacity: 1
-            }
-          }}
-        >
-          <ListItemButton
-            selected={isSelected}
-            onClick={() => handleItemClick(item)}
-            sx={{
-              py: 0.5,
-              px: 1,
-              minHeight: 32,
-              borderRadius: '6px',
-              mx: 0.5,
-              transition: 'all 0.1s ease',
-              bgcolor: isDragOver 
-                ? alpha(theme.palette.primary.main, 0.25)
-                : undefined,
-              border: isDragOver 
-                ? `2px dashed ${theme.palette.primary.main}`
-                : '2px solid transparent',
-              '&.Mui-selected': {
-                bgcolor: isDarkMode 
-                  ? alpha(theme.palette.primary.main, 0.2)
-                  : alpha(theme.palette.primary.main, 0.12),
-                '&:hover': {
-                  bgcolor: isDarkMode 
-                    ? alpha(theme.palette.primary.main, 0.25)
-                    : alpha(theme.palette.primary.main, 0.18)
-                }
-              },
-              '&:hover': {
-                bgcolor: isDarkMode 
-                  ? alpha('#fff', 0.05)
-                  : alpha('#000', 0.04)
-              }
-            }}
-          >
-            {/* 展开/折叠图标 */}
-            {isFolder && (
-              <Box 
-                sx={{ 
-                  width: 16, 
-                  height: 16, 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'center',
-                  mr: 0.5,
-                  color: 'text.secondary'
-                }}
-              >
-                {isExpanded ? (
-                  <ExpandMoreIcon sx={{ fontSize: 16 }} />
-                ) : (
-                  <ChevronRightIcon sx={{ fontSize: 16 }} />
-                )}
-              </Box>
-            )}
-            {!isFolder && <Box sx={{ width: 16, mr: 0.5 }} />}
-            
-            <ListItemIcon sx={{ minWidth: 24, mr: 1 }}>
-              {isFolder ? (
-                isExpanded ? (
-                  <FolderOpenIcon sx={{ fontSize: 18, color: '#F59E0B' }} />
-                ) : (
-                  <FolderIcon sx={{ fontSize: 18, color: '#F59E0B' }} />
-                )
-              ) : (
-                <Box sx={{ color: fileConfig?.color }}>
-                  {fileConfig?.icon}
-                </Box>
+      <div key={item.id}>
+        <ContextMenu>
+          <ContextMenuTrigger asChild>
+            <button
+              className={cn(
+                'w-full group flex items-center gap-1 px-1 py-1 rounded-md text-[13px] transition-all',
+                'hover:bg-accent/50',
+                isSelected && 'bg-primary/10 hover:bg-primary/15',
+                isDragOver && 'bg-primary/20 border-2 border-dashed border-primary',
+                isDragging && 'opacity-50'
               )}
-            </ListItemIcon>
-            <ListItemText
-              primary={item.name}
-              primaryTypographyProps={{
-                fontSize: '0.8125rem',
-                fontWeight: isSelected ? 500 : 400,
-                color: 'text.primary',
-                noWrap: true
-              }}
-            />
-            <Box 
-              className="item-actions"
-              sx={{ 
-                opacity: 0, 
-                transition: 'opacity 0.1s',
-                display: 'flex'
-              }}
+              style={{ paddingLeft: `${level * 12 + 4}px` }}
+              onClick={() => handleItemClick(item)}
+              draggable
+              onDragStart={(e) => handleDragStart(e, item)}
+              onDragOver={(e) => handleDragOver(e, item)}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, item)}
+              onDragEnd={handleDragEnd}
             >
-              <IconButton
-                size="small"
+              {/* 展开/折叠图标 */}
+              {isFolder ? (
+                <span className="w-4 h-4 flex items-center justify-center text-muted-foreground">
+                  {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                </span>
+              ) : (
+                <span className="w-4" />
+              )}
+              
+              {/* 文件/文件夹图标 */}
+              <span className="flex-shrink-0">
+                {isFolder ? (
+                  isExpanded ? (
+                    <FolderOpen className="w-4 h-4 text-amber-500" />
+                  ) : (
+                    <Folder className="w-4 h-4 text-amber-500" />
+                  )
+                ) : (
+                  <span style={{ color: fileConfig?.color }}>
+                    {fileConfig?.icon}
+                  </span>
+                )}
+              </span>
+              
+              {/* 文件名 */}
+              <span className={cn(
+                'flex-1 truncate text-left',
+                isSelected && 'font-medium'
+              )}>
+                {item.name}
+              </span>
+              
+              {/* 更多操作按钮 */}
+              <button
+                className={cn(
+                  'opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-accent',
+                  'transition-opacity'
+                )}
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleContextMenu(e, item);
-                }}
-                sx={{
-                  width: 24,
-                  height: 24,
-                  borderRadius: '4px',
-                  '&:hover': {
-                    bgcolor: isDarkMode 
-                      ? alpha('#fff', 0.1)
-                      : alpha('#000', 0.08)
-                  }
                 }}
               >
-                <MoreVertIcon sx={{ fontSize: 16 }} />
-              </IconButton>
-            </Box>
-          </ListItemButton>
-        </ListItem>
+                <MoreVertical className="w-4 h-4 text-muted-foreground" />
+              </button>
+            </button>
+          </ContextMenuTrigger>
+          <ContextMenuContent className="w-48">
+            {isFolder && (
+              <>
+                <ContextMenuItem onClick={() => handleContextAction('newFile')}>
+                  <FilePlus className="w-4 h-4 mr-2" />
+                  {t('explorer.newFile')}
+                </ContextMenuItem>
+                <ContextMenuItem onClick={() => handleContextAction('newFolder')}>
+                  <FolderPlus className="w-4 h-4 mr-2" />
+                  {t('explorer.newFolder')}
+                </ContextMenuItem>
+                <ContextMenuSeparator />
+              </>
+            )}
+            <ContextMenuItem onClick={() => handleContextAction('rename')}>
+              <Pencil className="w-4 h-4 mr-2" />
+              {t('explorer.rename')}
+            </ContextMenuItem>
+            <ContextMenuItem onClick={() => handleContextAction('move')}>
+              <Move className="w-4 h-4 mr-2" />
+              {t('explorer.move')}
+            </ContextMenuItem>
+            <ContextMenuItem onClick={() => handleContextAction('copy')}>
+              <Copy className="w-4 h-4 mr-2" />
+              {t('explorer.copy')}
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+            <ContextMenuItem 
+              onClick={() => handleContextAction('delete')}
+              className="text-destructive focus:text-destructive"
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              {t('explorer.delete')}
+            </ContextMenuItem>
+          </ContextMenuContent>
+        </ContextMenu>
         
         {/* 子项目 */}
-        {isFolder && (
-          <Collapse in={isExpanded} timeout="auto" unmountOnExit>
-            <List dense disablePadding>
-              {item.children?.map(child => renderFileItem(child, level + 1))}
-            </List>
-          </Collapse>
+        {isFolder && isExpanded && item.children && (
+          <div>
+            {item.children.map(child => renderFileItem(child, level + 1))}
+          </div>
         )}
-      </React.Fragment>
+      </div>
     );
   };
 
   if (loading) {
     return (
-      <Box 
-        sx={{ 
-          height: '100%', 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'center' 
-        }}
-      >
-        <Typography variant="body2" color="text.secondary" fontSize="0.8125rem">
+      <div className="h-full flex items-center justify-center">
+        <span className="text-sm text-muted-foreground">
           {t('common.loading')}
-        </Typography>
-      </Box>
+        </span>
+      </div>
     );
   }
 
   return (
-    <Box 
-      sx={{ height: '100%', overflow: 'auto', py: 0.5 }}
+    <div 
+      className="h-full overflow-auto py-1"
       onDragOver={(e) => {
         e.preventDefault();
         if (draggedItem) {
@@ -570,357 +559,167 @@ export const Explorer: React.FC = () => {
       onDrop={handleDropToRoot}
     >
       {fileTree.length === 0 ? (
-        <Box sx={{ p: 2, textAlign: 'center', color: 'text.secondary' }}>
-          <Typography variant="body2" fontSize="0.8125rem">{t('common.noData')}</Typography>
-        </Box>
+        <div className="p-4 text-center text-muted-foreground">
+          <span className="text-sm">{t('common.noData')}</span>
+        </div>
       ) : (
-        <List dense disablePadding>
+        <div className="px-1">
           {fileTree.map(item => renderFileItem(item))}
-        </List>
+        </div>
       )}
 
-      {/* 右键菜单 */}
-      <Menu
-        open={contextMenu !== null}
-        onClose={handleCloseContextMenu}
-        anchorReference="anchorPosition"
-        anchorPosition={
-          contextMenu !== null
-            ? { top: contextMenu.mouseY, left: contextMenu.mouseX }
-            : undefined
-        }
-        PaperProps={{
-          sx: {
-            minWidth: 180,
-            borderRadius: '10px',
-            boxShadow: '0 8px 30px rgba(0,0,0,0.15)'
-          }
-        }}
-      >
-        {contextMenu?.item?.type === 'directory' && (
-          <>
-            <MenuItem
-              onClick={() => {
-                setCreateDialog({ open: true, type: 'file', parentId: contextMenu?.item?.id });
-                handleCloseContextMenu();
-              }}
-            >
-              <ListItemIcon>
-                <CreateFileIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText 
-                primary={t('explorer.newFile')}
-                primaryTypographyProps={{ fontSize: '0.875rem' }}
-              />
-            </MenuItem>
-            <MenuItem
-              onClick={() => {
-                setCreateDialog({ open: true, type: 'directory', parentId: contextMenu?.item?.id });
-                handleCloseContextMenu();
-              }}
-            >
-              <ListItemIcon>
-                <CreateFolderIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText 
-                primary={t('explorer.newFolder')}
-                primaryTypographyProps={{ fontSize: '0.875rem' }}
-              />
-            </MenuItem>
-            <Divider sx={{ my: 0.5 }} />
-          </>
-        )}
-        <MenuItem
-          onClick={() => {
-            if (contextMenu?.item) {
-              setRenameDialog({ open: true, item: contextMenu.item });
-              setNewName(contextMenu.item.name);
-            }
-            handleCloseContextMenu();
-          }}
-        >
-          <ListItemIcon>
-            <EditIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText 
-            primary={t('explorer.rename')}
-            primaryTypographyProps={{ fontSize: '0.875rem' }}
-          />
-        </MenuItem>
-        <MenuItem
-          onClick={() => {
-            if (contextMenu?.item) {
-              setMoveDialog({ open: true, item: contextMenu.item, mode: 'move' });
-              setSelectedTargetFolder(null);
-              setExpandedFolders(new Set());
-            }
-            handleCloseContextMenu();
-          }}
-        >
-          <ListItemIcon>
-            <MoveIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText 
-            primary={t('explorer.move')}
-            primaryTypographyProps={{ fontSize: '0.875rem' }}
-          />
-        </MenuItem>
-        <MenuItem
-          onClick={() => {
-            if (contextMenu?.item) {
-              setMoveDialog({ open: true, item: contextMenu.item, mode: 'copy' });
-              setSelectedTargetFolder(null);
-              setExpandedFolders(new Set());
-            }
-            handleCloseContextMenu();
-          }}
-        >
-          <ListItemIcon>
-            <CopyIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText 
-            primary={t('explorer.copy')}
-            primaryTypographyProps={{ fontSize: '0.875rem' }}
-          />
-        </MenuItem>
-        <Divider sx={{ my: 0.5 }} />
-        <MenuItem 
-          onClick={() => {
-            if (contextMenu?.item) {
-              setDeleteDialog({ open: true, item: contextMenu.item });
-            }
-            handleCloseContextMenu();
-          }}
-          sx={{
-            color: 'error.main',
-            '&:hover': {
-              bgcolor: alpha(theme.palette.error.main, 0.1)
-            }
-          }}
-        >
-          <ListItemIcon>
-            <DeleteIcon fontSize="small" color="error" />
-          </ListItemIcon>
-          <ListItemText 
-            primary={t('explorer.delete')}
-            primaryTypographyProps={{ fontSize: '0.875rem' }}
-          />
-        </MenuItem>
-      </Menu>
-
       {/* 重命名对话框 */}
-      <Dialog 
-        open={renameDialog.open} 
-        onClose={() => setRenameDialog({ open: false, item: null })}
-        PaperProps={{
-          sx: { borderRadius: '12px', minWidth: 360 }
-        }}
-      >
-        <DialogTitle sx={{ pb: 1 }}>{t('explorer.rename')}</DialogTitle>
+      <Dialog open={renameDialog.open} onOpenChange={(open) => !open && setRenameDialog({ open: false, item: null })}>
         <DialogContent>
-          <TextField
-            autoFocus
-            margin="dense"
-            label={t('common.newName')}
-            fullWidth
-            variant="outlined"
-            size="small"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && newName.trim()) {
-                handleRename();
-              }
-            }}
-          />
+          <DialogHeader>
+            <DialogTitle>{t('explorer.rename')}</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <Input
+              autoFocus
+              placeholder={t('common.newName')}
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && newName.trim()) {
+                  handleRename();
+                }
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenameDialog({ open: false, item: null })}>
+              {t('common.cancel')}
+            </Button>
+            <Button onClick={handleRename} disabled={operationLoading}>
+              {operationLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {t('common.confirm')}
+            </Button>
+          </DialogFooter>
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button 
-            onClick={() => setRenameDialog({ open: false, item: null })}
-            sx={{ borderRadius: '8px' }}
-          >
-            {t('common.cancel')}
-          </Button>
-          <Button 
-            onClick={handleRename} 
-            variant="contained"
-            sx={{ borderRadius: '8px' }}
-          >
-            {t('common.confirm')}
-          </Button>
-        </DialogActions>
       </Dialog>
 
       {/* 创建对话框 */}
-      <Dialog 
-        open={createDialog.open} 
-        onClose={() => setCreateDialog({ open: false, type: null })}
-        PaperProps={{
-          sx: { borderRadius: '12px', minWidth: 360 }
-        }}
-      >
-        <DialogTitle sx={{ pb: 1 }}>
-          {createDialog.type === 'directory' ? t('explorer.newFolder') : t('explorer.newFile')}
-        </DialogTitle>
+      <Dialog open={createDialog.open} onOpenChange={(open) => !open && setCreateDialog({ open: false, type: null })}>
         <DialogContent>
-          <TextField
-            autoFocus
-            margin="dense"
-            label={t('common.name')}
-            fullWidth
-            variant="outlined"
-            size="small"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && newName.trim()) {
-                handleCreate(createDialog.type!, newName, createDialog.parentId);
-              }
-            }}
-          />
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button 
-            onClick={() => setCreateDialog({ open: false, type: null })}
-            sx={{ borderRadius: '8px' }}
-          >
-            {t('common.cancel')}
-          </Button>
-          <Button 
-            onClick={async () => {
-              if (newName.trim()) {
-                try {
-                  await handleCreate(createDialog.type!, newName, createDialog.parentId);
-                } catch (error) {
-                  // 错误已在 handleCreate 中处理
+          <DialogHeader>
+            <DialogTitle>
+              {createDialog.type === 'directory' ? t('explorer.newFolder') : t('explorer.newFile')}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <Input
+              autoFocus
+              placeholder={t('common.name')}
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && newName.trim()) {
+                  handleCreate(createDialog.type!, newName, createDialog.parentId);
                 }
-              }
-            }}
-            variant="contained"
-            sx={{ borderRadius: '8px' }}
-          >
-            {t('common.confirm')}
-          </Button>
-        </DialogActions>
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateDialog({ open: false, type: null })}>
+              {t('common.cancel')}
+            </Button>
+            <Button 
+              onClick={async () => {
+                if (newName.trim()) {
+                  try {
+                    await handleCreate(createDialog.type!, newName, createDialog.parentId);
+                  } catch (error) {
+                    // 错误已在 handleCreate 中处理
+                  }
+                }
+              }}
+            >
+              {t('common.confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
       </Dialog>
 
       {/* 删除确认对话框 */}
-      <Dialog 
-        open={deleteDialog.open} 
-        onClose={() => setDeleteDialog({ open: false, item: null })}
-        PaperProps={{
-          sx: { borderRadius: '12px', minWidth: 360 }
-        }}
-      >
-        <DialogTitle sx={{ pb: 1 }}>{t('explorer.confirmDelete')}</DialogTitle>
+      <Dialog open={deleteDialog.open} onOpenChange={(open) => !open && setDeleteDialog({ open: false, item: null })}>
         <DialogContent>
-          <Typography>
-            {deleteDialog.item?.type === 'directory' 
-              ? t('explorer.deleteDirectoryWarning', { name: deleteDialog.item?.name })
-              : t('explorer.deleteFileWarning', { name: deleteDialog.item?.name })}
-          </Typography>
+          <DialogHeader>
+            <DialogTitle>{t('explorer.confirmDelete')}</DialogTitle>
+            <DialogDescription>
+              {deleteDialog.item?.type === 'directory' 
+                ? t('explorer.deleteDirectoryWarning', { name: deleteDialog.item?.name })
+                : t('explorer.deleteFileWarning', { name: deleteDialog.item?.name })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setDeleteDialog({ open: false, item: null })}
+              disabled={operationLoading}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button 
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={operationLoading}
+            >
+              {operationLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {t('common.delete')}
+            </Button>
+          </DialogFooter>
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button 
-            onClick={() => setDeleteDialog({ open: false, item: null })}
-            sx={{ borderRadius: '8px' }}
-            disabled={operationLoading}
-          >
-            {t('common.cancel')}
-          </Button>
-          <Button 
-            onClick={handleDelete} 
-            variant="contained"
-            color="error"
-            sx={{ borderRadius: '8px' }}
-            disabled={operationLoading}
-            startIcon={operationLoading ? <CircularProgress size={16} color="inherit" /> : null}
-          >
-            {t('common.delete')}
-          </Button>
-        </DialogActions>
       </Dialog>
 
       {/* 移动/复制对话框 */}
-      <Dialog 
-        open={moveDialog.open} 
-        onClose={() => setMoveDialog({ open: false, item: null, mode: 'move' })}
-        PaperProps={{
-          sx: { borderRadius: '12px', minWidth: 400, maxHeight: '70vh' }
-        }}
-      >
-        <DialogTitle sx={{ pb: 1 }}>
-          {moveDialog.mode === 'move' ? t('explorer.moveTo') : t('explorer.copyTo')}
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            {moveDialog.item?.name}
-          </Typography>
-        </DialogTitle>
-        <DialogContent sx={{ p: 0 }}>
-          <Box sx={{ maxHeight: 300, overflow: 'auto' }}>
+      <Dialog open={moveDialog.open} onOpenChange={(open) => !open && setMoveDialog({ open: false, item: null, mode: 'move' })}>
+        <DialogContent className="max-h-[70vh]">
+          <DialogHeader>
+            <DialogTitle>
+              {moveDialog.mode === 'move' ? t('explorer.moveTo') : t('explorer.copyTo')}
+            </DialogTitle>
+            <DialogDescription>{moveDialog.item?.name}</DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="max-h-[300px] pr-4">
             {/* 根目录选项 */}
-            <List dense>
-              <ListItem disablePadding>
-                <ListItemButton
-                  selected={selectedTargetFolder === null}
-                  onClick={() => setSelectedTargetFolder(null)}
-                  sx={{
-                    py: 0.5,
-                    borderRadius: '6px',
-                    mx: 0.5,
-                    '&.Mui-selected': {
-                      bgcolor: alpha(theme.palette.primary.main, 0.15)
-                    }
-                  }}
-                >
-                  <ListItemIcon sx={{ minWidth: 28 }}>
-                    <HomeIcon sx={{ fontSize: 18, color: theme.palette.primary.main }} />
-                  </ListItemIcon>
-                  <ListItemText 
-                    primary={t('explorer.rootDirectory')} 
-                    primaryTypographyProps={{ fontSize: '0.875rem', fontWeight: 500 }}
-                  />
-                </ListItemButton>
-              </ListItem>
-              <Divider sx={{ my: 0.5 }} />
-              {renderFolderTree(fileTree)}
-            </List>
-          </Box>
+            <button
+              className={cn(
+                'w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-colors',
+                'hover:bg-accent',
+                selectedTargetFolder === null && 'bg-primary/10'
+              )}
+              onClick={() => setSelectedTargetFolder(null)}
+            >
+              <Home className="w-4 h-4 text-primary" />
+              <span className="font-medium">{t('explorer.rootDirectory')}</span>
+            </button>
+            <div className="my-2 h-px bg-border" />
+            {renderFolderTree(fileTree)}
+          </ScrollArea>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setMoveDialog({ open: false, item: null, mode: 'move' })}
+              disabled={operationLoading}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button onClick={handleMove} disabled={operationLoading}>
+              {operationLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {moveDialog.mode === 'move' ? t('explorer.move') : t('explorer.copy')}
+            </Button>
+          </DialogFooter>
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button 
-            onClick={() => setMoveDialog({ open: false, item: null, mode: 'move' })}
-            sx={{ borderRadius: '8px' }}
-            disabled={operationLoading}
-          >
-            {t('common.cancel')}
-          </Button>
-          <Button 
-            onClick={handleMove} 
-            variant="contained"
-            sx={{ borderRadius: '8px' }}
-            disabled={operationLoading}
-            startIcon={operationLoading ? <CircularProgress size={16} color="inherit" /> : null}
-          >
-            {moveDialog.mode === 'move' ? t('explorer.move') : t('explorer.copy')}
-          </Button>
-        </DialogActions>
       </Dialog>
 
-      {/* 操作反馈 Snackbar */}
-      <Snackbar
+      {/* 操作反馈 Toast */}
+      <Toast
         open={snackbar.open}
-        autoHideDuration={3000}
+        message={snackbar.message}
+        severity={snackbar.severity}
         onClose={() => setSnackbar({ ...snackbar, open: false })}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert 
-          onClose={() => setSnackbar({ ...snackbar, open: false })} 
-          severity={snackbar.severity}
-          sx={{ width: '100%', borderRadius: '8px' }}
-        >
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
-    </Box>
+      />
+    </div>
   );
 };

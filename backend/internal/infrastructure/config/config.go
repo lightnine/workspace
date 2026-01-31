@@ -59,8 +59,27 @@ type LogConfig struct {
 }
 
 type KernelConfig struct {
-	PythonPath       string `mapstructure:"python_path"`
-	ExecutionTimeout int    `mapstructure:"execution_timeout"`
+	PythonPath       string        `mapstructure:"python_path"`
+	ExecutionTimeout int           `mapstructure:"execution_timeout"`
+	Gateway          GatewayConfig `mapstructure:"gateway"`
+}
+
+// GatewayConfig holds configuration for remote Jupyter Gateway
+type GatewayConfig struct {
+	Enabled           bool   `mapstructure:"enabled"`             // Enable remote gateway mode
+	URL               string `mapstructure:"url"`                 // Gateway server URL, e.g., http://gateway:8888
+	AuthToken         string `mapstructure:"auth_token"`          // Authentication token for gateway
+	ConnectTimeout    int    `mapstructure:"connect_timeout"`     // Connection timeout in seconds (default: 30)
+	RequestTimeout    int    `mapstructure:"request_timeout"`     // Request timeout in seconds (default: 60)
+	WSPingInterval    int    `mapstructure:"ws_ping_interval"`    // WebSocket ping interval in seconds (default: 30)
+	ValidateCert      bool   `mapstructure:"validate_cert"`       // Validate SSL certificate (default: true)
+	LaunchTimeout     int    `mapstructure:"launch_timeout"`      // Kernel launch timeout in seconds (default: 60)
+	HTTPUser          string `mapstructure:"http_user"`           // HTTP Basic Auth username
+	HTTPPassword      string `mapstructure:"http_password"`       // HTTP Basic Auth password
+	Headers           string `mapstructure:"headers"`             // Custom headers as JSON string
+	ClientCert        string `mapstructure:"client_cert"`         // Client certificate path
+	ClientKey         string `mapstructure:"client_key"`          // Client key path
+	CACerts           string `mapstructure:"ca_certs"`            // CA certificates path
 }
 
 var (

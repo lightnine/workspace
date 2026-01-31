@@ -1,32 +1,34 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { 
+  Folder, 
+  Plus, 
+  FolderPlus, 
+  FileCode,
+  FileText,
+  Database,
+  File
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
-  Box,
-  Paper,
-  Typography,
-  IconButton,
-  Tooltip,
-  Menu,
-  MenuItem,
-  ListItemIcon,
   Dialog,
-  DialogTitle,
   DialogContent,
-  DialogActions,
-  Button,
-  TextField,
-  Divider
-} from '@mui/material';
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import {
-  Folder as FolderIcon,
-  Add as AddIcon,
-  CreateNewFolder as CreateFolderIcon,
-  NoteAdd as CreateFileIcon,
-  Code as CodeIcon,
-  Storage as SqlIcon,
-  Description as MarkdownIcon,
-  InsertDriveFile as FileIcon
-} from '@mui/icons-material';
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
 import { Explorer } from '../../components/Explorer/Explorer';
 import { TabView } from '../../components/TabView/TabView';
 import { MonacoEditor } from '../../components/Editor/MonacoEditor';
@@ -36,28 +38,13 @@ export const Workspace: React.FC = () => {
   const { t } = useTranslation();
   const { createDialog, openCreateDialog, closeCreateDialog, handleCreate: contextHandleCreate } = useWorkspace();
 
-  // 新建菜单状态
-  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-  const menuOpen = Boolean(anchorEl);
-
-  // 本地输入状态
   const [newName, setNewName] = useState('');
 
-  const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
-    setAnchorEl(event.currentTarget);
-  };
-
-  const handleMenuClose = () => {
-    setAnchorEl(null);
-  };
-
   const handleCreateClick = (type: CreateFileType) => {
-    handleMenuClose();
     openCreateDialog(type);
     setNewName('');
   };
 
-  // 获取完整文件名（带扩展名）
   const getFullFileName = () => {
     if (!createDialog.type || createDialog.type === 'directory') return newName;
     const config = FILE_TYPE_CONFIG[createDialog.type];
@@ -65,7 +52,6 @@ export const Workspace: React.FC = () => {
     return newName + config.extension;
   };
 
-  // 获取对话框标题
   const getDialogTitle = () => {
     switch (createDialog.type) {
       case 'notebook': return t('workspace.newNotebook');
@@ -77,7 +63,6 @@ export const Workspace: React.FC = () => {
     }
   };
 
-  // 获取文件名占位符
   const getFileNamePlaceholder = () => {
     switch (createDialog.type) {
       case 'notebook': return 'Untitled.ipynb';
@@ -92,12 +77,8 @@ export const Workspace: React.FC = () => {
   const handleCreate = async () => {
     if (!newName.trim() || !createDialog.type) return;
 
-    try {
-      await contextHandleCreate(newName);
-      setNewName('');
-    } catch (error) {
-      console.error('创建失败:', error);
-    }
+    await contextHandleCreate(newName);
+    setNewName('');
   };
 
   const handleCloseDialog = () => {
@@ -106,201 +87,105 @@ export const Workspace: React.FC = () => {
   };
 
   return (
-    <Box sx={{ display: 'flex', height: 'calc(100vh - 64px)', overflow: 'hidden' }}>
-      {/* 左侧文件浏览器 */}
-      <Paper
-        elevation={0}
-        sx={{
-          width: { xs: 0, sm: 280 },
-          minWidth: { xs: 0, sm: 280 },
-          display: { xs: 'none', sm: 'flex' },
-          flexDirection: 'column',
-          borderRight: '1px solid',
-          borderColor: 'divider',
-          bgcolor: 'background.paper'
-        }}
-      >
-        <Box
-          sx={{
-            px: 2,
-            py: 1.5,
-            borderBottom: '1px solid',
-            borderColor: 'divider',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            minHeight: 48
-          }}
-        >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <FolderIcon sx={{ color: '#F59E0B', fontSize: 20 }} />
-            <Typography 
-              variant="subtitle2" 
-              sx={{ 
-                fontWeight: 600,
-                fontSize: '0.8125rem',
-                color: 'text.primary'
-              }}
-            >
-              {t('workspace.fileExplorer')}
-            </Typography>
-          </Box>
-          <Tooltip title={t('common.newFile')} arrow>
-            <IconButton
-              size="small"
-              onClick={handleMenuOpen}
-              sx={{
-                width: 28,
-                height: 28,
-                borderRadius: '6px',
-                bgcolor: 'primary.main',
-                color: 'white',
-                '&:hover': {
-                  bgcolor: 'primary.dark'
-                }
-              }}
-            >
-              <AddIcon sx={{ fontSize: 18 }} />
-            </IconButton>
-          </Tooltip>
-        </Box>
-        <Box sx={{ flex: 1, overflow: 'auto' }}>
+    <div className="flex h-[calc(100vh-56px)] overflow-hidden">
+      {/* Left: File Explorer */}
+      <div className="w-[280px] min-w-[280px] hidden sm:flex flex-col border-r border-border bg-background">
+        <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Folder className="w-5 h-5 text-amber-500" />
+            <span className="font-semibold text-sm">{t('workspace.fileExplorer')}</span>
+          </div>
+          <DropdownMenu>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DropdownMenuTrigger asChild>
+                  <Button size="icon" className="h-7 w-7">
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+              </TooltipTrigger>
+              <TooltipContent>{t('common.newFile')}</TooltipContent>
+            </Tooltip>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem onClick={() => handleCreateClick('notebook')}>
+                <FileCode className="w-4 h-4 mr-2 text-orange-500" />
+                {t('workspace.newNotebook')}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleCreateClick('python')}>
+                <FileText className="w-4 h-4 mr-2 text-blue-500" />
+                {t('workspace.newPython')}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleCreateClick('sql')}>
+                <Database className="w-4 h-4 mr-2 text-amber-600" />
+                {t('workspace.newSql')}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleCreateClick('markdown')}>
+                <FileText className="w-4 h-4 mr-2 text-purple-500" />
+                {t('workspace.newMarkdown')}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => handleCreateClick('file')}>
+                <File className="w-4 h-4 mr-2" />
+                {t('common.newFile')}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleCreateClick('directory')}>
+                <FolderPlus className="w-4 h-4 mr-2 text-amber-500" />
+                {t('common.newFolder')}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+        <ScrollArea className="flex-1">
           <Explorer />
-        </Box>
-      </Paper>
+        </ScrollArea>
+      </div>
 
-      {/* 右侧编辑器区域 */}
-      <Box 
-        sx={{ 
-          flex: 1, 
-          display: 'flex', 
-          flexDirection: 'column', 
-          overflow: 'hidden', 
-          minWidth: 0, 
-          bgcolor: 'background.default' 
-        }}
-      >
+      {/* Right: Editor Area */}
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <TabView />
-        <Box sx={{ flex: 1, overflow: 'hidden', minHeight: 0 }}>
+        <div className="flex-1 overflow-hidden min-h-0">
           <MonacoEditor height="100%" />
-        </Box>
-      </Box>
+        </div>
+      </div>
 
-      {/* 新建菜单 */}
-      <Menu
-        anchorEl={anchorEl}
-        open={menuOpen}
-        onClose={handleMenuClose}
-        anchorOrigin={{
-          vertical: 'bottom',
-          horizontal: 'right'
-        }}
-        transformOrigin={{
-          vertical: 'top',
-          horizontal: 'right'
-        }}
-        PaperProps={{
-          sx: {
-            minWidth: 200,
-            borderRadius: '10px',
-            boxShadow: '0 8px 30px rgba(0,0,0,0.15)',
-            mt: 0.5
-          }
-        }}
-      >
-        <MenuItem onClick={() => handleCreateClick('notebook')}>
-          <ListItemIcon>
-            <CreateFileIcon fontSize="small" sx={{ color: '#F37626' }} />
-          </ListItemIcon>
-          <Typography fontSize="0.875rem">{t('workspace.newNotebook')}</Typography>
-        </MenuItem>
-        <MenuItem onClick={() => handleCreateClick('python')}>
-          <ListItemIcon>
-            <CodeIcon fontSize="small" sx={{ color: '#3776AB' }} />
-          </ListItemIcon>
-          <Typography fontSize="0.875rem">{t('workspace.newPython')}</Typography>
-        </MenuItem>
-        <MenuItem onClick={() => handleCreateClick('sql')}>
-          <ListItemIcon>
-            <SqlIcon fontSize="small" sx={{ color: '#E38C00' }} />
-          </ListItemIcon>
-          <Typography fontSize="0.875rem">{t('workspace.newSql')}</Typography>
-        </MenuItem>
-        <MenuItem onClick={() => handleCreateClick('markdown')}>
-          <ListItemIcon>
-            <MarkdownIcon fontSize="small" sx={{ color: '#083FA1' }} />
-          </ListItemIcon>
-          <Typography fontSize="0.875rem">{t('workspace.newMarkdown')}</Typography>
-        </MenuItem>
-        <Divider sx={{ my: 0.5 }} />
-        <MenuItem onClick={() => handleCreateClick('file')}>
-          <ListItemIcon>
-            <FileIcon fontSize="small" color="action" />
-          </ListItemIcon>
-          <Typography fontSize="0.875rem">{t('common.newFile')}</Typography>
-        </MenuItem>
-        <MenuItem onClick={() => handleCreateClick('directory')}>
-          <ListItemIcon>
-            <CreateFolderIcon fontSize="small" sx={{ color: '#F59E0B' }} />
-          </ListItemIcon>
-          <Typography fontSize="0.875rem">{t('common.newFolder')}</Typography>
-        </MenuItem>
-      </Menu>
-
-      {/* 创建对话框 */}
-      <Dialog
-        open={createDialog.open}
-        onClose={handleCloseDialog}
-        maxWidth="xs"
-        fullWidth
-        PaperProps={{
-          sx: {
-            borderRadius: '12px'
-          }
-        }}
-      >
-        <DialogTitle sx={{ pb: 1 }}>
-          {getDialogTitle()}
-        </DialogTitle>
+      {/* Create Dialog */}
+      <Dialog open={createDialog.open} onOpenChange={handleCloseDialog}>
         <DialogContent>
-          <TextField
-            autoFocus
-            margin="dense"
-            label={t('common.name')}
-            placeholder={getFileNamePlaceholder()}
-            fullWidth
-            variant="outlined"
-            size="small"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && newName.trim()) {
-                handleCreate();
-              }
-            }}
-            helperText={createDialog.type && createDialog.type !== 'directory' && createDialog.type !== 'file'
-              ? t('workspace.fileWillBe', { name: getFullFileName() || getFileNamePlaceholder() })
-              : undefined
-            }
-          />
+          <DialogHeader>
+            <DialogTitle>{getDialogTitle()}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="name">{t('common.name')}</Label>
+              <Input
+                id="name"
+                placeholder={getFileNamePlaceholder()}
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && newName.trim()) {
+                    handleCreate();
+                  }
+                }}
+                autoFocus
+              />
+              {createDialog.type && createDialog.type !== 'directory' && createDialog.type !== 'file' && (
+                <p className="text-sm text-muted-foreground">
+                  {t('workspace.fileWillBe', { name: getFullFileName() || getFileNamePlaceholder() })}
+                </p>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={handleCloseDialog}>
+              {t('common.cancel')}
+            </Button>
+            <Button onClick={handleCreate} disabled={!newName.trim()}>
+              {t('common.confirm')}
+            </Button>
+          </DialogFooter>
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button 
-            onClick={handleCloseDialog}
-            sx={{ borderRadius: '8px' }}
-          >
-            {t('common.cancel')}
-          </Button>
-          <Button
-            onClick={handleCreate}
-            variant="contained"
-            disabled={!newName.trim()}
-            sx={{ borderRadius: '8px' }}
-          >
-            {t('common.confirm')}
-          </Button>
-        </DialogActions>
       </Dialog>
-    </Box>
+    </div>
   );
 };

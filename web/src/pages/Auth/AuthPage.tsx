@@ -1,40 +1,19 @@
 import React, { useState } from 'react';
-import {
-  Box,
-  Card,
-  CardContent,
-  TextField,
-  Button,
-  Typography,
-  Tab,
-  Tabs,
-  Alert,
-  CircularProgress
-} from '@mui/material';
 import { useTranslation } from 'react-i18next';
+import { Loader2 } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { cn } from '@/lib/utils';
 import { useApp } from '../../context/AppContext';
 import { register as registerApi } from '../../services/auth';
 import { setAccessToken, setRefreshToken } from '../../services/api';
 
-interface TabPanelProps {
-  children?: React.ReactNode;
-  index: number;
-  value: number;
-}
-
-function TabPanel(props: TabPanelProps) {
-  const { children, value, index, ...other } = props;
-  return (
-    <div hidden={value !== index} {...other}>
-      {value === index && <Box sx={{ pt: 3 }}>{children}</Box>}
-    </div>
-  );
-}
-
 export const AuthPage: React.FC = () => {
   const { t } = useTranslation();
   const { login, setUser } = useApp();
-  const [tabValue, setTabValue] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,11 +26,6 @@ export const AuthPage: React.FC = () => {
   const [registerEmail, setRegisterEmail] = useState('');
   const [registerPassword, setRegisterPassword] = useState('');
   const [registerDisplayName, setRegisterDisplayName] = useState('');
-
-  const handleTabChange = (_: React.SyntheticEvent, newValue: number) => {
-    setTabValue(newValue);
-    setError(null);
-  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -90,144 +64,114 @@ export const AuthPage: React.FC = () => {
   };
 
   return (
-    <Box
-      sx={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        bgcolor: 'background.default',
-        p: 2
-      }}
-    >
-      <Card sx={{ maxWidth: 420, width: '100%' }}>
-        <CardContent sx={{ p: 4 }}>
+    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      <Card className="w-full max-w-[420px]">
+        <CardContent className="p-8">
           {/* Logo */}
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 3 }}>
-            <Box
-              sx={{
-                width: 48,
-                height: 48,
-                borderRadius: 2,
-                background: 'linear-gradient(135deg, #0B5FFF 0%, #7C3AED 100%)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'white',
-                fontWeight: 'bold',
-                fontSize: '1.2rem',
-                mr: 1.5
-              }}
-            >
+          <div className="flex items-center justify-center mb-6">
+            <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-primary to-violet-500 flex items-center justify-center text-white font-bold text-xl mr-3">
               DW
-            </Box>
-            <Typography variant="h5" fontWeight={600}>
-              Workspace
-            </Typography>
-          </Box>
+            </div>
+            <span className="text-2xl font-semibold">Workspace</span>
+          </div>
 
-          {/* Tabs */}
-          <Tabs value={tabValue} onChange={handleTabChange} centered sx={{ mb: 2 }}>
-            <Tab label={t('auth.login')} />
-            <Tab label={t('auth.register')} />
+          <Tabs defaultValue="login" className="w-full" onValueChange={() => setError(null)}>
+            <TabsList className="grid w-full grid-cols-2 mb-6">
+              <TabsTrigger value="login">{t('auth.login')}</TabsTrigger>
+              <TabsTrigger value="register">{t('auth.register')}</TabsTrigger>
+            </TabsList>
+
+            {/* Error Alert */}
+            {error && (
+              <div className="mb-4 p-3 rounded-md bg-destructive/10 border border-destructive/20 text-destructive text-sm">
+                {error}
+              </div>
+            )}
+
+            {/* Login Form */}
+            <TabsContent value="login">
+              <form onSubmit={handleLogin} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="login-email">{t('auth.email')}</Label>
+                  <Input
+                    id="login-email"
+                    type="email"
+                    value={loginEmail}
+                    onChange={(e) => setLoginEmail(e.target.value)}
+                    required
+                    autoFocus
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="login-password">{t('auth.password')}</Label>
+                  <Input
+                    id="login-password"
+                    type="password"
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    required
+                  />
+                </div>
+                <Button type="submit" className="w-full" disabled={loading}>
+                  {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {t('auth.login')}
+                </Button>
+              </form>
+            </TabsContent>
+
+            {/* Register Form */}
+            <TabsContent value="register">
+              <form onSubmit={handleRegister} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="register-username">{t('auth.username')}</Label>
+                  <Input
+                    id="register-username"
+                    value={registerUsername}
+                    onChange={(e) => setRegisterUsername(e.target.value)}
+                    required
+                    minLength={3}
+                    maxLength={50}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="register-email">{t('auth.email')}</Label>
+                  <Input
+                    id="register-email"
+                    type="email"
+                    value={registerEmail}
+                    onChange={(e) => setRegisterEmail(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="register-displayname">{t('auth.displayName')}</Label>
+                  <Input
+                    id="register-displayname"
+                    value={registerDisplayName}
+                    onChange={(e) => setRegisterDisplayName(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="register-password">{t('auth.password')}</Label>
+                  <Input
+                    id="register-password"
+                    type="password"
+                    value={registerPassword}
+                    onChange={(e) => setRegisterPassword(e.target.value)}
+                    required
+                    minLength={8}
+                  />
+                  <p className="text-xs text-muted-foreground">{t('auth.passwordHint')}</p>
+                </div>
+                <Button type="submit" className="w-full" disabled={loading}>
+                  {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {t('auth.register')}
+                </Button>
+              </form>
+            </TabsContent>
           </Tabs>
-
-          {/* Error Alert */}
-          {error && (
-            <Alert severity="error" sx={{ mb: 2 }}>
-              {error}
-            </Alert>
-          )}
-
-          {/* Login Form */}
-          <TabPanel value={tabValue} index={0}>
-            <form onSubmit={handleLogin}>
-              <TextField
-                fullWidth
-                label={t('auth.email')}
-                type="email"
-                value={loginEmail}
-                onChange={(e) => setLoginEmail(e.target.value)}
-                margin="normal"
-                required
-                autoFocus
-              />
-              <TextField
-                fullWidth
-                label={t('auth.password')}
-                type="password"
-                value={loginPassword}
-                onChange={(e) => setLoginPassword(e.target.value)}
-                margin="normal"
-                required
-              />
-              <Button
-                type="submit"
-                fullWidth
-                variant="contained"
-                size="large"
-                disabled={loading}
-                sx={{ mt: 3 }}
-              >
-                {loading ? <CircularProgress size={24} /> : t('auth.login')}
-              </Button>
-            </form>
-          </TabPanel>
-
-          {/* Register Form */}
-          <TabPanel value={tabValue} index={1}>
-            <form onSubmit={handleRegister}>
-              <TextField
-                fullWidth
-                label={t('auth.username')}
-                value={registerUsername}
-                onChange={(e) => setRegisterUsername(e.target.value)}
-                margin="normal"
-                required
-                autoFocus
-                inputProps={{ minLength: 3, maxLength: 50 }}
-              />
-              <TextField
-                fullWidth
-                label={t('auth.email')}
-                type="email"
-                value={registerEmail}
-                onChange={(e) => setRegisterEmail(e.target.value)}
-                margin="normal"
-                required
-              />
-              <TextField
-                fullWidth
-                label={t('auth.displayName')}
-                value={registerDisplayName}
-                onChange={(e) => setRegisterDisplayName(e.target.value)}
-                margin="normal"
-              />
-              <TextField
-                fullWidth
-                label={t('auth.password')}
-                type="password"
-                value={registerPassword}
-                onChange={(e) => setRegisterPassword(e.target.value)}
-                margin="normal"
-                required
-                inputProps={{ minLength: 8 }}
-                helperText={t('auth.passwordHint')}
-              />
-              <Button
-                type="submit"
-                fullWidth
-                variant="contained"
-                size="large"
-                disabled={loading}
-                sx={{ mt: 3 }}
-              >
-                {loading ? <CircularProgress size={24} /> : t('auth.register')}
-              </Button>
-            </form>
-          </TabPanel>
         </CardContent>
       </Card>
-    </Box>
+    </div>
   );
 };

@@ -77,7 +77,20 @@ func main() {
 	versionUseCase := version.NewUseCase(versionRepo, objectRepo, fileStorage)
 	searchUseCase := search.NewUseCase(objectRepo, tagRepo, fileStorage)
 	tagUseCase := tag.NewUseCase(tagRepo, objectRepo)
-	kernelUseCase := kernel.NewUseCase(cfg.Kernel.PythonPath, cfg.Storage.BasePath)
+
+	// Initialize kernel use case with gateway support
+	var kernelUseCase *kernel.UseCase
+	if cfg.Kernel.Gateway.Enabled {
+		log.Info().Str("gateway_url", cfg.Kernel.Gateway.URL).Msg("Initializing kernel with gateway support")
+		var err error
+		kernelUseCase, err = kernel.NewUseCaseWithGateway(cfg.Kernel.PythonPath, cfg.Storage.BasePath, &cfg.Kernel.Gateway)
+		if err != nil {
+			log.Warn().Err(err).Msg("Failed to initialize gateway, falling back to local kernel mode")
+			kernelUseCase = kernel.NewUseCase(cfg.Kernel.PythonPath, cfg.Storage.BasePath)
+		}
+	} else {
+		kernelUseCase = kernel.NewUseCase(cfg.Kernel.PythonPath, cfg.Storage.BasePath)
+	}
 
 	// Initialize handlers
 	handlers := &handler.Handlers{

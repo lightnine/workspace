@@ -1,79 +1,74 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
+import { Sun, Moon, Languages } from 'lucide-react';
 import {
   Dialog,
-  DialogTitle,
   DialogContent,
-  DialogActions,
-  Button,
-  FormControl,
-  InputLabel,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import {
   Select,
-  MenuItem,
-  FormHelperText,
-  Box,
-  Typography,
-  RadioGroup,
-  FormControlLabel,
-  Radio
-} from '@mui/material';
-import { useTranslation } from 'react-i18next';
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useApp } from '../../context/AppContext';
 
 interface SettingsDialogProps {
   open: boolean;
-  onClose: () => void;
+  onOpenChange: (open: boolean) => void;
 }
 
-export const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
+export const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onOpenChange }) => {
   const { t } = useTranslation();
   const { theme, toggleTheme, language, setLanguage } = useApp();
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>{t('settings.title')}</DialogTitle>
-      <DialogContent>
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1 }}>
-          {/* 语言设置 */}
-          <FormControl fullWidth>
-            <InputLabel>{t('settings.language')}</InputLabel>
-            <Select
-              value={language}
-              label={t('settings.language')}
-              onChange={(e) => setLanguage(e.target.value as 'zh' | 'en')}
-            >
-              <MenuItem value="zh">{t('settings.chinese')}</MenuItem>
-              <MenuItem value="en">{t('settings.english')}</MenuItem>
-            </Select>
-            <FormHelperText>{t('settings.languageDesc')}</FormHelperText>
-          </FormControl>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[425px]">
+        <DialogHeader>
+          <DialogTitle>{t('settings.title')}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-6 py-4">
+          {/* Theme */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              {theme === 'dark' ? (
+                <Moon className="w-5 h-5 text-muted-foreground" />
+              ) : (
+                <Sun className="w-5 h-5 text-muted-foreground" />
+              )}
+              <Label htmlFor="theme-switch">{t('settings.darkMode')}</Label>
+            </div>
+            <Switch
+              id="theme-switch"
+              checked={theme === 'dark'}
+              onCheckedChange={toggleTheme}
+            />
+          </div>
 
-          {/* 主题设置 */}
-          <FormControl>
-            <Typography variant="subtitle2" sx={{ mb: 1 }}>
-              {t('settings.theme')}
-            </Typography>
-            <RadioGroup
-              value={theme}
-              onChange={toggleTheme}
-            >
-              <FormControlLabel
-                value="light"
-                control={<Radio />}
-                label={t('settings.light')}
-              />
-              <FormControlLabel
-                value="dark"
-                control={<Radio />}
-                label={t('settings.dark')}
-              />
-            </RadioGroup>
-            <FormHelperText>{t('settings.themeDesc')}</FormHelperText>
-          </FormControl>
-        </Box>
+          {/* Language */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Languages className="w-5 h-5 text-muted-foreground" />
+              <Label htmlFor="language-select">{t('settings.language')}</Label>
+            </div>
+            <Select value={language} onValueChange={(value: 'zh' | 'en') => setLanguage(value)}>
+              <SelectTrigger className="w-[140px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="zh">中文</SelectItem>
+                <SelectItem value="en">English</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
       </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>{t('common.close')}</Button>
-      </DialogActions>
     </Dialog>
   );
 };

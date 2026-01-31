@@ -1,91 +1,44 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Box, Typography, Avatar, Card, CardContent } from '@mui/material';
-import { Search as SearchIcon } from '@mui/icons-material';
+import { useNavigate } from 'react-router-dom';
+import { Search as SearchIcon } from 'lucide-react';
 import { SearchBar } from '../../components/SearchBar/SearchBar';
-import { SearchSuggestion } from '../../types';
 import { useEditor } from '../../context/EditorContext';
+import { getObjectById } from '../../services/api';
+import { SearchSuggestion } from '../../types';
 
 export const Search: React.FC = () => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const { openFile } = useEditor();
 
   const handleSelectResult = async (suggestion: SearchSuggestion) => {
-    try {
-      // 从后端获取对象详情
-      const { getObjectById } = await import('../../services/api');
-      const file = await getObjectById(suggestion.id);
-      await openFile(file);
-    } catch (error) {
-      console.error('打开文件失败:', error);
+    if (suggestion.type === 'directory') {
+      navigate(`/workspace?path=${encodeURIComponent(suggestion.path)}`);
+    } else {
+      const fileItem = await getObjectById(suggestion.id);
+      await openFile(fileItem);
+      navigate('/workspace');
     }
   };
 
   return (
-    <Box
-      sx={{
-        p: { xs: 2, sm: 3, md: 4 },
-        maxWidth: 1000,
-        mx: 'auto',
-        minHeight: 'calc(100vh - 64px)',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center'
-      }}
-    >
-      <Box sx={{ width: '100%', textAlign: 'center', mb: 4 }}>
-        <Avatar
-          sx={{
-            bgcolor: 'primary.main',
-            width: 80,
-            height: 80,
-            mx: 'auto',
-            mb: 3
-          }}
-        >
-          <SearchIcon sx={{ fontSize: 40 }} />
-        </Avatar>
-        <Typography
-          variant="h3"
-          sx={{
-            fontWeight: 700,
-            mb: 2,
-            background: 'linear-gradient(135deg, #0B5FFF 0%, #7C3AED 100%)',
-            backgroundClip: 'text',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent'
-          }}
-        >
-          {t('search.title')}
-        </Typography>
-        <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
-          {t('search.subtitle')}
-        </Typography>
-      </Box>
-
-      <Card
-        sx={{
-          width: '100%',
-          maxWidth: 800,
-          p: 2,
-          boxShadow: 3
-        }}
-      >
-        <CardContent sx={{ p: 0 }}>
-          <SearchBar 
-            onSelectResult={handleSelectResult} 
-            defaultExpanded={true} 
-            disableClose={true}
-          />
-        </CardContent>
-      </Card>
-
-      <Box sx={{ mt: 4, textAlign: 'center' }}>
-        <Typography variant="caption" color="text.secondary">
-          {t('search.hint')}
-        </Typography>
-      </Box>
-    </Box>
+    <div className="h-full flex flex-col items-center justify-center p-6">
+      <div className="w-full max-w-2xl space-y-8">
+        <div className="text-center space-y-2">
+          <SearchIcon className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+          <h1 className="text-2xl font-semibold">{t('search.title')}</h1>
+          <p className="text-muted-foreground">
+            {t('search.description')}
+          </p>
+        </div>
+        
+        <SearchBar
+          defaultExpanded
+          disableClose
+          onSelectResult={handleSelectResult}
+        />
+      </div>
+    </div>
   );
 };
