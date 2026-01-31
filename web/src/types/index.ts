@@ -59,6 +59,7 @@ export interface Tab {
   fileId: number; // 匹配后端的 int64 ID
   fileName: string;
   filePath: string;
+  fileType: FileType; // 文件类型，用于 URL 导航
   isDirty: boolean; // 未保存状态
   content?: string;
 }

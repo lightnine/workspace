@@ -55,8 +55,8 @@ export const Recents: React.FC = () => {
       navigate(`/workspace?path=${encodeURIComponent(item.filePath)}`);
     } else {
       const fileItem = await getObjectById(item.fileId);
+      // openFile will automatically navigate to the correct URL
       await openFile(fileItem);
-      navigate('/workspace');
     }
   };
 

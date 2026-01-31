@@ -22,6 +22,10 @@ const AppRoutes: React.FC = () => {
     <Routes>
       <Route path="/" element={<Dashboard />} />
       <Route path="/workspace" element={<Workspace />} />
+      {/* Notebook 编辑器路由: /editor/notebooks/{fileId} */}
+      <Route path="/editor/notebooks/:fileId" element={<Workspace />} />
+      {/* 普通文件编辑器路由: /editor/files/{fileId} */}
+      <Route path="/editor/files/:fileId" element={<Workspace />} />
       <Route path="/recents" element={<Recents />} />
       <Route path="/search" element={<Search />} />
       <Route path="/compute" element={

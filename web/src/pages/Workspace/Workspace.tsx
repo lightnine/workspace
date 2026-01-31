@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { 
   Folder, 
   Plus, 
@@ -45,6 +46,9 @@ import { getObjectById } from '../../services/api';
 
 export const Workspace: React.FC = () => {
   const { t } = useTranslation();
+  const { fileId } = useParams<{ fileId?: string }>();
+  const location = useLocation();
+  const navigate = useNavigate();
   const { 
     createDialog, 
     openCreateDialog, 
@@ -52,12 +56,55 @@ export const Workspace: React.FC = () => {
     handleCreate: contextHandleCreate,
     refreshFileTree
   } = useWorkspace();
-  const { activeTab } = useEditor();
+  const { activeTab, openFile, tabs } = useEditor();
   const { user: currentUser } = useApp();
 
   const [newName, setNewName] = useState('');
   const [showDetailsPanel, setShowDetailsPanel] = useState(false);
   const [currentFileDetails, setCurrentFileDetails] = useState<FileItem | null>(null);
+
+  // Determine if we're in notebook or file mode based on URL path
+  const isNotebookRoute = location.pathname.startsWith('/editor/notebooks/');
+  const isFileRoute = location.pathname.startsWith('/editor/files/');
+
+  // Open file from URL parameter when component mounts or fileId changes
+  useEffect(() => {
+    const openFileFromUrl = async () => {
+      if (!fileId) return;
+      
+      const numericFileId = parseInt(fileId, 10);
+      if (isNaN(numericFileId)) return;
+      
+      // Check if file is already open
+      const existingTab = tabs.find(tab => tab.fileId === numericFileId);
+      if (existingTab) return;
+      
+      try {
+        const file = await getObjectById(numericFileId);
+        
+        // Validate that the URL matches the file type
+        if (isNotebookRoute && file.type !== 'notebook') {
+          // Redirect to correct URL
+          navigate(`/editor/files/${fileId}`, { replace: true });
+          return;
+        }
+        if (isFileRoute && file.type === 'notebook') {
+          // Redirect to correct URL
+          navigate(`/editor/notebooks/${fileId}`, { replace: true });
+          return;
+        }
+        
+        // Open file without updating URL since we're already at the correct URL
+        await openFile(file, false);
+      } catch (error) {
+        console.error('Failed to open file from URL:', error);
+        // Redirect to workspace on error
+        navigate('/workspace', { replace: true });
+      }
+    };
+    
+    openFileFromUrl();
+  }, [fileId, isNotebookRoute, isFileRoute, tabs, openFile, navigate]);
 
   // Load file details when active tab changes
   useEffect(() => {

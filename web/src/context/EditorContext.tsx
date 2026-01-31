@@ -1,14 +1,23 @@
 import React, { createContext, useContext, useState, ReactNode, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Tab, FileItem } from '../types';
 import { getFileContent, saveFileContent, patchNotebook, CellOperation, addRecent } from '../services/api';
+
+// Helper function to generate file URL based on file type
+export const getFileEditorUrl = (fileId: number, fileType: string): string => {
+  if (fileType === 'notebook') {
+    return `/editor/notebooks/${fileId}`;
+  }
+  return `/editor/files/${fileId}`;
+};
 
 interface EditorContextType {
   tabs: Tab[];
   activeTabId: string | null;
   activeTab: Tab | null;
-  setActiveTabId: (id: string | null) => void;
-  openFile: (file: FileItem) => Promise<void>;
+  setActiveTabId: (id: string | null, updateUrl?: boolean) => void;
+  openFile: (file: FileItem, updateUrl?: boolean) => Promise<void>;
   closeTab: (tabId: string) => void;
   updateTabContent: (tabId: string, content: string) => void;
   markTabDirty: (tabId: string, isDirty: boolean) => void;
@@ -20,16 +29,39 @@ const EditorContext = createContext<EditorContextType | undefined>(undefined);
 
 export const EditorProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [tabs, setTabs] = useState<Tab[]>([]);
-  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [activeTabIdState, setActiveTabIdState] = useState<string | null>(null);
   
   // 计算 activeTab
-  const activeTab = tabs.find(tab => tab.id === activeTabId) || null;
+  const activeTab = tabs.find(tab => tab.id === activeTabIdState) || null;
+  
+  // Wrapped setActiveTabId that also updates URL
+  const setActiveTabId = useCallback((id: string | null, updateUrl: boolean = true) => {
+    setActiveTabIdState(id);
+    
+    if (updateUrl && id) {
+      const tab = tabs.find(t => t.id === id);
+      if (tab) {
+        const newUrl = getFileEditorUrl(tab.fileId, tab.fileType);
+        if (location.pathname !== newUrl) {
+          navigate(newUrl);
+        }
+      }
+    } else if (updateUrl && !id) {
+      // No active tab, go to workspace
+      if (location.pathname !== '/workspace' && 
+          (location.pathname.startsWith('/editor/notebooks/') || location.pathname.startsWith('/editor/files/'))) {
+        navigate('/workspace');
+      }
+    }
+  }, [tabs, navigate, location.pathname]);
   
   // 跟踪正在打开的文件 ID，防止重复打开
   const openingFilesRef = useRef<Set<number>>(new Set());
 
-  const openFile = useCallback(async (file: FileItem) => {
+  const openFile = useCallback(async (file: FileItem, updateUrl: boolean = true) => {
     // 如果这个文件正在打开中，跳过
     if (openingFilesRef.current.has(file.id)) {
       return;
@@ -40,18 +72,17 @@ export const EditorProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       return;
     }
     
-    // 检查文件是否已经打开 (使用函数式更新来获取最新状态)
-    let existingTabFound = false;
-    setTabs(prev => {
-      const existingTab = prev.find(tab => tab.fileId === file.id);
-      if (existingTab) {
-        existingTabFound = true;
-        setActiveTabId(existingTab.id);
+    // 检查文件是否已经打开
+    const existingTab = tabs.find(tab => tab.fileId === file.id);
+    if (existingTab) {
+      setActiveTabIdState(existingTab.id);
+      // Update URL even when switching to existing tab
+      if (updateUrl) {
+        const newUrl = getFileEditorUrl(file.id, file.type);
+        if (location.pathname !== newUrl) {
+          navigate(newUrl);
+        }
       }
-      return prev;
-    });
-    
-    if (existingTabFound) {
       return;
     }
     
@@ -71,20 +102,29 @@ export const EditorProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         fileId: file.id,
         fileName: file.name,
         filePath: file.path,
+        fileType: file.type,
         isDirty: false,
         content
       };
 
       setTabs(prev => {
         // 再次检查是否已存在（防止竞态条件）
-        const existingTab = prev.find(tab => tab.fileId === file.id);
-        if (existingTab) {
-          setActiveTabId(existingTab.id);
+        const existing = prev.find(tab => tab.fileId === file.id);
+        if (existing) {
+          setActiveTabIdState(existing.id);
           return prev;
         }
         return [...prev, newTab];
       });
-      setActiveTabId(newTab.id);
+      setActiveTabIdState(newTab.id);
+
+      // Update URL after opening file
+      if (updateUrl) {
+        const newUrl = getFileEditorUrl(file.id, file.type);
+        if (location.pathname !== newUrl) {
+          navigate(newUrl);
+        }
+      }
 
       // 添加到最近访问
       addRecent({
@@ -100,9 +140,9 @@ export const EditorProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       // 移除正在打开的标记
       openingFilesRef.current.delete(file.id);
     }
-  }, []);
+  }, [tabs, navigate, location.pathname]);
 
-  const closeTab = (tabId: string) => {
+  const closeTab = useCallback((tabId: string) => {
     const tab = tabs.find(t => t.id === tabId);
     if (tab?.isDirty) {
       // TODO: 显示确认对话框
@@ -110,12 +150,23 @@ export const EditorProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       if (!confirmed) return;
     }
 
-    setTabs(prev => prev.filter(t => t.id !== tabId));
-    if (activeTabId === tabId) {
-      const remainingTabs = tabs.filter(t => t.id !== tabId);
-      setActiveTabId(remainingTabs.length > 0 ? remainingTabs[remainingTabs.length - 1].id : null);
+    const remainingTabs = tabs.filter(t => t.id !== tabId);
+    setTabs(remainingTabs);
+    
+    if (activeTabIdState === tabId) {
+      if (remainingTabs.length > 0) {
+        const lastTab = remainingTabs[remainingTabs.length - 1];
+        setActiveTabIdState(lastTab.id);
+        // Update URL to the new active tab
+        const newUrl = getFileEditorUrl(lastTab.fileId, lastTab.fileType);
+        navigate(newUrl);
+      } else {
+        setActiveTabIdState(null);
+        // No more tabs, navigate back to workspace
+        navigate('/workspace');
+      }
     }
-  };
+  }, [tabs, activeTabIdState, t, navigate]);
 
   const updateTabContent = (tabId: string, content: string) => {
     setTabs(prev =>
@@ -162,7 +213,7 @@ export const EditorProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     <EditorContext.Provider
       value={{
         tabs,
-        activeTabId,
+        activeTabId: activeTabIdState,
         activeTab,
         setActiveTabId,
         openFile,
