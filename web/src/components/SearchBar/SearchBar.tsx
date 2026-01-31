@@ -170,7 +170,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
                   {getTypeIcon(suggestion.type)}
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium truncate">{suggestion.name}</div>
-                    <div className="text-xs text-muted-foreground truncate">{suggestion.path}</div>
+                    <div className="text-xs text-muted-foreground truncate">{suggestion.full_path}</div>
                   </div>
                 </button>
               ))}

@@ -7,6 +7,7 @@ export interface FileItem {
   name: string;
   type: FileType;
   path: string;
+  full_path: string; // Databricks-style path: /Workspace/Users/{email}/...
   parent_id?: number | null;
   size: number;
   description?: string;
@@ -55,6 +56,7 @@ export interface SearchSuggestion {
   name: string;
   type: FileType;
   path: string;
+  full_path: string;
 }
 
 // 最近访问项（前端本地存储）

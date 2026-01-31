@@ -24,7 +24,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useApp } from '../../context/AppContext';
 import { useKernel } from '../../context/KernelContext';
 import type { CellOutput } from '../../services/kernel';
@@ -36,27 +35,30 @@ import {
   Trash2,
   Copy,
   ChevronUp,
-  ChevronDown,
-  MoreHorizontal,
+  MoreVertical,
   Code,
   Type,
-  ChevronRight,
-  ChevronDownIcon,
   X,
   ArrowUpToLine,
   ArrowDownToLine,
   RotateCcw,
   Circle,
-  CheckCircle2,
   XCircle,
   ChevronsDownUp,
   ChevronsUpDown,
   Link,
   Unlink,
   Save,
-  RefreshCw,
-  Cloud,
   Loader2,
+  Star,
+  Calendar,
+  Share2,
+  Settings,
+  Check,
+  Info,
+  MessageSquare,
+  History,
+  Hash,
 } from 'lucide-react';
 import { CellOperation } from '../../services/api';
 
@@ -89,12 +91,19 @@ interface NotebookCell {
   source: string | string[];
   outputs?: NotebookOutput[];
   execution_count?: number | null;
-  metadata?: { language?: string; collapsed?: boolean; scrolled?: boolean };
+  metadata?: { 
+    language?: string; 
+    collapsed?: boolean; 
+    scrolled?: boolean; 
+    execution_time?: string; 
+    executed_at?: string;
+    title?: string;  // Databricks-style cell title
+  };
   id?: string;
 }
 
 // Supported languages for code cells
-type CellLanguage = 'python' | 'sql' | 'r' | 'scala' | 'markdown';
+type CellLanguage = 'python' | 'sql' | 'r' | 'scala' | 'markdown' | 'sh';
 
 interface LanguageConfig {
   id: CellLanguage;
@@ -102,20 +111,34 @@ interface LanguageConfig {
   monacoLanguage: string;
   icon: string;
   color: string;
+  magicCommand: string;
 }
 
 const SUPPORTED_LANGUAGES: LanguageConfig[] = [
-  { id: 'python', name: 'Python', monacoLanguage: 'python', icon: 'Py', color: 'bg-blue-500' },
-  { id: 'sql', name: 'SQL', monacoLanguage: 'sql', icon: 'SQL', color: 'bg-orange-500' },
-  { id: 'r', name: 'R', monacoLanguage: 'r', icon: 'R', color: 'bg-sky-500' },
-  { id: 'scala', name: 'Scala', monacoLanguage: 'scala', icon: 'Sc', color: 'bg-red-500' },
-  { id: 'markdown', name: 'Markdown', monacoLanguage: 'markdown', icon: 'MD', color: 'bg-purple-500' },
+  { id: 'python', name: 'Python', monacoLanguage: 'python', icon: 'Py', color: 'bg-blue-500', magicCommand: '%python' },
+  { id: 'sql', name: 'SQL', monacoLanguage: 'sql', icon: 'SQL', color: 'bg-orange-500', magicCommand: '%sql' },
+  { id: 'r', name: 'R', monacoLanguage: 'r', icon: 'R', color: 'bg-sky-500', magicCommand: '%r' },
+  { id: 'scala', name: 'Scala', monacoLanguage: 'scala', icon: 'Sc', color: 'bg-red-500', magicCommand: '%scala' },
+  { id: 'sh', name: 'Shell', monacoLanguage: 'shell', icon: 'Sh', color: 'bg-green-600', magicCommand: '%sh' },
+  { id: 'markdown', name: 'Markdown', monacoLanguage: 'markdown', icon: 'MD', color: 'bg-purple-500', magicCommand: '%md' },
 ];
 
 const getLanguageConfig = (lang: string): LanguageConfig => {
   const normalizedLang = lang.toLowerCase();
   return SUPPORTED_LANGUAGES.find(l => l.id === normalizedLang || l.monacoLanguage === normalizedLang) 
     || SUPPORTED_LANGUAGES[0]; // default to Python
+};
+
+// Parse magic command from cell source
+const parseMagicCommand = (source: string): { language: CellLanguage | null; cleanSource: string } => {
+  const trimmed = source.trimStart();
+  for (const lang of SUPPORTED_LANGUAGES) {
+    if (trimmed.startsWith(lang.magicCommand)) {
+      const cleanSource = trimmed.slice(lang.magicCommand.length).trimStart();
+      return { language: lang.id, cleanSource };
+    }
+  }
+  return { language: null, cleanSource: source };
 };
 
 interface NotebookOutput {
@@ -147,6 +170,22 @@ const hasErrorOutput = (outputs?: NotebookOutput[]) =>
 
 const generateCellId = () => `cell-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
+// Format time ago for display
+const formatTimeAgo = (date: Date): string => {
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffSecs = Math.floor(diffMs / 1000);
+  const diffMins = Math.floor(diffSecs / 60);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+  
+  if (diffSecs < 60) return 'just now';
+  if (diffMins < 60) return `${diffMins} minute${diffMins > 1 ? 's' : ''} ago`;
+  if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+  if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+  return date.toLocaleDateString();
+};
+
 const createEmptyCell = (type: 'code' | 'markdown' = 'code'): NotebookCell => ({
   cell_type: type,
   source: [],
@@ -156,7 +195,7 @@ const createEmptyCell = (type: 'code' | 'markdown' = 'code'): NotebookCell => ({
   id: generateCellId()
 });
 
-// Output renderer component
+// Output renderer component - Databricks style with error actions
 const CellOutputRenderer: React.FC<{ outputs: NotebookOutput[]; isDarkMode: boolean }> = ({ outputs, isDarkMode }) => {
   if (!outputs || outputs.length === 0) return null;
 
@@ -168,12 +207,14 @@ const CellOutputRenderer: React.FC<{ outputs: NotebookOutput[]; isDarkMode: bool
         if (outputType === 'stream') {
           const text = normalizeText(output.text);
           const isStderr = output.name === 'stderr';
+          // Check for warning patterns
+          const hasWarning = text.toLowerCase().includes('warning');
           return (
             <pre
               key={index}
               className={cn(
                 'm-0 p-3 bg-transparent whitespace-pre-wrap break-words',
-                isStderr ? 'text-red-500' : isDarkMode ? 'text-zinc-300' : 'text-zinc-800'
+                isStderr ? 'text-red-500' : hasWarning ? 'text-amber-600' : isDarkMode ? 'text-zinc-300' : 'text-zinc-800'
               )}
             >
               {text}
@@ -185,15 +226,36 @@ const CellOutputRenderer: React.FC<{ outputs: NotebookOutput[]; isDarkMode: bool
           const traceback = normalizeText(output.traceback);
           const errorMsg = traceback || `${output.ename || 'Error'}: ${output.evalue || ''}`;
           return (
-            <pre
-              key={index}
-              className={cn(
-                'm-0 p-3 whitespace-pre-wrap break-words text-red-500 rounded',
-                isDarkMode ? 'bg-red-500/10' : 'bg-red-50'
-              )}
-            >
-              {errorMsg}
-            </pre>
+            <div key={index}>
+              <pre
+                className={cn(
+                  'm-0 p-3 whitespace-pre-wrap break-words text-red-500 rounded-t',
+                  isDarkMode ? 'bg-red-500/10' : 'bg-red-50'
+                )}
+              >
+                {errorMsg}
+              </pre>
+              {/* Databricks-style error action buttons */}
+              <div className={cn(
+                'flex items-center gap-2 px-3 py-2 rounded-b',
+                isDarkMode ? 'bg-red-500/5 border-t border-red-500/20' : 'bg-red-50 border-t border-red-200'
+              )}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-6 px-2 text-[11px] border-red-300 text-red-600 hover:bg-red-100"
+                >
+                  Diagnose error
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-6 px-2 text-[11px] border-red-300 text-red-600 hover:bg-red-100"
+                >
+                  Debug
+                </Button>
+              </div>
+            </div>
           );
         }
 
@@ -253,10 +315,13 @@ const CellOutputRenderer: React.FC<{ outputs: NotebookOutput[]; isDarkMode: bool
 interface CellProps {
   cell: NotebookCell;
   index: number;
+  cellNumber: number; // Display number (1-indexed)
   isActive: boolean;
   isRunning: boolean;
+  executionStartTime?: Date;
   onActivate: () => void;
   onUpdate: (source: string) => void;
+  onUpdateTitle: (title: string) => void;
   onRun: () => void;
   onDelete: () => void;
   onDuplicate: () => void;
@@ -275,14 +340,35 @@ interface CellProps {
   isDarkMode: boolean;
 }
 
+// Databricks-style ChevronDown icon component
+const ChevronDown: React.FC<{ className?: string }> = ({ className }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="m6 9 6 6 6-6"/>
+  </svg>
+);
+
+// Sparkle icon for AI Assistant
+const Sparkles: React.FC<{ className?: string }> = ({ className }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+    <path d="M5 3v4"/>
+    <path d="M19 17v4"/>
+    <path d="M3 5h4"/>
+    <path d="M17 19h4"/>
+  </svg>
+);
+
 // Cell component
 const NotebookCellComponent: React.FC<CellProps> = ({
   cell,
   index: _index,
+  cellNumber,
   isActive,
   isRunning,
+  executionStartTime,
   onActivate,
   onUpdate,
+  onUpdateTitle,
   onRun,
   onDelete,
   onDuplicate,
@@ -304,6 +390,9 @@ const NotebookCellComponent: React.FC<CellProps> = ({
   const [isMarkdownEditing, setIsMarkdownEditing] = useState(false);
   const [outputCollapsed, setOutputCollapsed] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  const [elapsedTime, setElapsedTime] = useState<string>('');
+  const [isTitleEditing, setIsTitleEditing] = useState(false);
+  const [titleValue, setTitleValue] = useState(cell.metadata?.title || '');
   const editorRef = useRef<any>(null);
 
   const source = normalizeText(cell.source);
@@ -314,9 +403,48 @@ const NotebookCellComponent: React.FC<CellProps> = ({
   const hasOutput = outputs.length > 0;
   const executionCount = cell.execution_count;
   
-  // Get cell-specific language (from metadata) or default notebook language
-  const cellLanguage = cell.metadata?.language || language;
+  // Parse magic command from source
+  const { language: magicLanguage, cleanSource } = parseMagicCommand(source);
+  
+  // Get cell-specific language (from magic command, metadata, or default notebook language)
+  const cellLanguage = magicLanguage || cell.metadata?.language || language;
   const langConfig = getLanguageConfig(cellLanguage);
+  
+  // Determine if using magic command
+  const hasMagicCommand = magicLanguage !== null;
+
+  // Update elapsed time during execution
+  useEffect(() => {
+    if (isRunning && executionStartTime) {
+      const timer = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - executionStartTime.getTime()) / 1000);
+        setElapsedTime(`${elapsed}s`);
+      }, 100);
+      return () => clearInterval(timer);
+    } else {
+      setElapsedTime('');
+    }
+  }, [isRunning, executionStartTime]);
+
+  // Format execution timestamp - Databricks style: "Jan 21, 2026 (<1s)"
+  const formatExecutionTime = () => {
+    if (cell.metadata?.executed_at) {
+      const date = new Date(cell.metadata.executed_at);
+      const execTime = cell.metadata.execution_time || '<1s';
+      
+      // Format date as "Jan 21, 2026"
+      const dateStr = date.toLocaleDateString('en-US', { 
+        month: 'short', 
+        day: 'numeric', 
+        year: 'numeric' 
+      });
+      
+      return { dateStr, execTime };
+    }
+    return null;
+  };
+
+  const executionTimeInfo = formatExecutionTime();
 
   const handleEditorDidMount = (editor: any) => {
     editorRef.current = editor;
@@ -324,101 +452,145 @@ const NotebookCellComponent: React.FC<CellProps> = ({
 
   const handleEditorChange = (value: string | undefined) => {
     if (value !== undefined) {
-      onUpdate(value);
+      // If there was a magic command, preserve it
+      if (hasMagicCommand) {
+        onUpdate(`${langConfig.magicCommand} ${value}`);
+      } else {
+        onUpdate(value);
+      }
     }
   };
 
   // Calculate editor height
   const editorHeight = useMemo(() => {
-    const lines = source.split('\n').length;
+    const displaySource = hasMagicCommand ? cleanSource : source;
+    const lines = displaySource.split('\n').length;
     return Math.max(38, Math.min(lines * 19 + 10, 400));
-  }, [source]);
-
-  // Status icon
-  const StatusIcon = () => {
-    if (isRunning) {
-      return <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" />;
-    }
-    if (hasError) {
-      return <XCircle className="w-4 h-4 text-red-500" />;
-    }
-    if (executionCount !== null && executionCount !== undefined) {
-      return <CheckCircle2 className="w-4 h-4 text-green-500" />;
-    }
-    return null;
-  };
+  }, [source, cleanSource, hasMagicCommand]);
 
   return (
     <div
       onClick={onActivate}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      className="relative mb-0"
+      className="relative px-12 mb-0.5"
     >
-      {/* Cell container */}
+      {/* Databricks-style Cell container - minimal borders */}
       <div
         className={cn(
-          'flex border-l-2 transition-colors',
-          isActive ? 'border-primary bg-primary/5' : 'border-transparent'
+          'rounded-md border transition-all',
+          isActive 
+            ? 'border-primary/40 shadow-sm' 
+            : 'border-transparent hover:border-border/50',
+          hasError && 'border-red-500/40',
+          isDarkMode ? 'bg-[#1e1e1e]' : 'bg-white'
         )}
       >
-        {/* Left side - execution area */}
-        <div className="w-12 flex-shrink-0 flex flex-col items-center pt-1 gap-1">
-          {/* Run button */}
-          {isCodeCell && (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className={cn(
-                      'h-7 w-7 rounded-md',
-                      (isHovered || isActive) && 'bg-accent'
-                    )}
-                    onClick={(e) => { e.stopPropagation(); onRun(); }}
-                    disabled={readOnly || isRunning}
-                  >
-                    {isRunning ? (
-                      <Loader2 className="w-4 h-4 text-primary animate-spin" />
-                    ) : (
-                      <Play className="w-4 h-4" />
-                    )}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="left">{t('notebook.runCell')}</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )}
+        {/* Cell header - Databricks style: compact and clean */}
+        <div className={cn(
+          'flex items-center gap-2 px-2 py-1 min-h-[32px]',
+          isDarkMode ? 'bg-transparent' : 'bg-transparent'
+        )}>
+          {/* Left: Run button with dropdown */}
+          <div className="flex items-center">
+            {isCodeCell && (
+              <DropdownMenu>
+                <div className="flex items-center">
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className={cn(
+                            'h-6 w-6 rounded-l rounded-r-none',
+                            isRunning && 'bg-primary/10'
+                          )}
+                          onClick={(e) => { e.stopPropagation(); onRun(); }}
+                          disabled={readOnly || isRunning}
+                        >
+                          {isRunning ? (
+                            <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" />
+                          ) : (
+                            <Play className="w-3.5 h-3.5" />
+                          )}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">{t('notebook.runCell')}</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-4 rounded-l-none rounded-r px-0"
+                      disabled={readOnly}
+                    >
+                      <ChevronDown className="w-3 h-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                </div>
+                <DropdownMenuContent align="start" className="w-48">
+                  <DropdownMenuItem onClick={() => onRun()}>
+                    <Play className="w-4 h-4 mr-2" />
+                    Run cell
+                  </DropdownMenuItem>
+                  <DropdownMenuItem disabled>
+                    <ListOrdered className="w-4 h-4 mr-2" />
+                    Run cell and below
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+            
+            {isMarkdownCell && (
+              <div className="h-6 w-6 flex items-center justify-center">
+                <Type className="w-4 h-4 text-muted-foreground" />
+              </div>
+            )}
+          </div>
 
-          {/* Execution count */}
+          {/* Execution status indicator - Databricks style checkbox */}
           {isCodeCell && (
-            <span className={cn(
-              'font-mono text-[11px] min-h-4 flex items-center justify-center',
-              hasError ? 'text-red-500' : 'text-muted-foreground'
+            <div className={cn(
+              'flex items-center justify-center',
             )}>
-              [{executionCount ?? ' '}]
-            </span>
-          )}
-
-          {/* Markdown indicator */}
-          {isMarkdownCell && (
-            <div className="w-7 h-7 flex items-center justify-center">
-              <Type className="w-4 h-4 text-muted-foreground" />
+              {isRunning ? (
+                <Loader2 className="w-4 h-4 text-primary animate-spin" />
+              ) : hasError ? (
+                <XCircle className="w-4 h-4 text-red-500" />
+              ) : executionCount !== null && executionCount !== undefined ? (
+                <Check className="w-4 h-4 text-green-500" />
+              ) : (
+                <div className="w-4 h-4" /> // placeholder
+              )}
             </div>
           )}
-        </div>
 
-        {/* Right side - content */}
-        <div className="flex-1 min-w-0 py-1 pr-2">
-          {/* Cell toolbar - show on hover */}
-          <div
-            className={cn(
-              'flex items-center justify-end gap-0.5 mb-1 h-6 transition-opacity',
-              (isHovered || isActive) ? 'opacity-100' : 'opacity-0'
+          {/* Execution time/status - Databricks style */}
+          <div className="flex-1 flex items-center gap-2 min-w-0">
+            {isCodeCell && (
+              <>
+                {isRunning ? (
+                  <span className="text-[11px] text-muted-foreground">
+                    Running... {elapsedTime}
+                  </span>
+                ) : hasError ? (
+                  <span className="text-[11px] text-red-500 font-medium">
+                    Last execution failed
+                  </span>
+                ) : executionTimeInfo ? (
+                  <span className="text-[11px] text-muted-foreground truncate">
+                    {executionTimeInfo.dateStr} ({executionTimeInfo.execTime})
+                  </span>
+                ) : null}
+              </>
             )}
-          >
-            {/* Language selector for code cells */}
+          </div>
+
+          {/* Right: Cell number + Language badge + Actions */}
+          <div className="flex items-center gap-1.5">
+            {/* Language badge - Databricks style */}
             {isCodeCell && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -426,28 +598,29 @@ const NotebookCellComponent: React.FC<CellProps> = ({
                     variant="ghost"
                     size="sm"
                     className={cn(
-                      'h-5.5 px-2 text-[11px] font-medium rounded mr-1',
-                      langConfig.color,
-                      'text-white hover:opacity-90'
+                      'h-5 px-1.5 text-[10px] font-semibold rounded',
+                      'hover:bg-muted/80',
+                      langConfig.id === 'sql' && 'text-orange-600',
+                      langConfig.id === 'python' && 'text-blue-600',
+                      langConfig.id === 'sh' && 'text-green-600',
                     )}
                     disabled={readOnly}
                   >
-                    {langConfig.icon}
-                    <ChevronDown className="w-3 h-3 ml-1" />
+                    {langConfig.name.toUpperCase()}
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-32">
-                  {SUPPORTED_LANGUAGES.map((lang) => (
+                <DropdownMenuContent align="end" className="w-36">
+                  {SUPPORTED_LANGUAGES.filter(l => l.id !== 'markdown').map((lang) => (
                     <DropdownMenuItem
                       key={lang.id}
                       onClick={() => onChangeLanguage(lang.id)}
                       className={cn(
-                        'flex items-center gap-2',
+                        'flex items-center gap-2 text-xs',
                         cellLanguage === lang.id && 'bg-accent'
                       )}
                     >
                       <span className={cn(
-                        'w-5 h-5 rounded text-[10px] font-bold flex items-center justify-center text-white',
+                        'w-4 h-4 rounded text-[9px] font-bold flex items-center justify-center text-white',
                         lang.color
                       )}>
                         {lang.icon}
@@ -459,356 +632,375 @@ const NotebookCellComponent: React.FC<CellProps> = ({
               </DropdownMenu>
             )}
 
-            {/* Type toggle */}
-            <div className="flex mr-1">
+            {/* Action buttons - icon row */}
+            <div className={cn(
+              'flex items-center gap-0 transition-opacity',
+              (isHovered || isActive) ? 'opacity-100' : 'opacity-0'
+            )}>
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
                       variant="ghost"
                       size="icon"
-                      className={cn(
-                        'h-5.5 w-7 rounded-r-none',
-                        isCodeCell && (isDarkMode ? 'bg-white/10' : 'bg-black/10')
-                      )}
-                      onClick={(e) => { e.stopPropagation(); onChangeType('code'); }}
+                      className="h-6 w-6"
+                      onClick={(e) => { e.stopPropagation(); onDuplicate(); }}
                       disabled={readOnly}
                     >
-                      <Code className="w-3.5 h-3.5" />
+                      <Copy className="w-3.5 h-3.5" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Code</TooltipContent>
+                  <TooltipContent>{t('notebook.duplicate')}</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className={cn(
-                        'h-5.5 w-7 rounded-l-none',
-                        isMarkdownCell && (isDarkMode ? 'bg-white/10' : 'bg-black/10')
-                      )}
-                      onClick={(e) => { e.stopPropagation(); onChangeType('markdown'); }}
-                      disabled={readOnly}
-                    >
-                      <Type className="w-3.5 h-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Markdown</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </div>
+              
+              {/* Expand/collapse toggle for output */}
+              {isCodeCell && hasOutput && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={(e) => { e.stopPropagation(); setOutputCollapsed(!outputCollapsed); }}
+                      >
+                        {outputCollapsed ? (
+                          <ChevronsUpDown className="w-3.5 h-3.5" />
+                        ) : (
+                          <ChevronsDownUp className="w-3.5 h-3.5" />
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>{outputCollapsed ? 'Expand output' : 'Collapse output'}</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
 
-            <Separator orientation="vertical" className="h-4 mx-1" />
-
-            {/* Move buttons */}
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-5.5 w-5.5"
-                    onClick={(e) => { e.stopPropagation(); onMoveUp(); }}
-                    disabled={!canMoveUp || readOnly}
-                  >
-                    <ChevronUp className="w-4 h-4" />
+              {/* More menu */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-6 w-6">
+                    <MoreVertical className="w-3.5 h-3.5" />
                   </Button>
-                </TooltipTrigger>
-                <TooltipContent>{t('notebook.moveUp')}</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-5.5 w-5.5"
-                    onClick={(e) => { e.stopPropagation(); onMoveDown(); }}
-                    disabled={!canMoveDown || readOnly}
-                  >
-                    <ChevronDown className="w-4 h-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{t('notebook.moveDown')}</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-
-            <Separator orientation="vertical" className="h-4 mx-1" />
-
-            {/* Copy and delete */}
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-5.5 w-5.5"
-                    onClick={(e) => { e.stopPropagation(); onDuplicate(); }}
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem onClick={() => onMoveUp()} disabled={!canMoveUp || readOnly}>
+                    <ChevronUp className="w-4 h-4 mr-2" />
+                    {t('notebook.moveUp')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onMoveDown()} disabled={!canMoveDown || readOnly}>
+                    <ChevronDown className="w-4 h-4 mr-2" />
+                    {t('notebook.moveDown')}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => onInsertAbove('code')} disabled={readOnly}>
+                    <ArrowUpToLine className="w-4 h-4 mr-2" />
+                    {t('notebook.insertCodeAbove')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onInsertBelow('code')} disabled={readOnly}>
+                    <ArrowDownToLine className="w-4 h-4 mr-2" />
+                    {t('notebook.insertCodeBelow')}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => onInsertAbove('markdown')} disabled={readOnly}>
+                    <Type className="w-4 h-4 mr-2" />
+                    {t('notebook.insertMarkdownAbove')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onInsertBelow('markdown')} disabled={readOnly}>
+                    <Type className="w-4 h-4 mr-2" />
+                    {t('notebook.insertMarkdownBelow')}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem 
+                    onClick={() => onChangeType(isCodeCell ? 'markdown' : 'code')} 
                     disabled={readOnly}
                   >
-                    <Copy className="w-3.5 h-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{t('notebook.duplicate')}</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-5.5 w-5.5 hover:text-red-500 hover:bg-red-500/10"
-                    onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                    {isCodeCell ? <Type className="w-4 h-4 mr-2" /> : <Code className="w-4 h-4 mr-2" />}
+                    Convert to {isCodeCell ? 'Markdown' : 'Code'}
+                  </DropdownMenuItem>
+                  {isCodeCell && hasOutput && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={onClearOutput} disabled={readOnly}>
+                        <X className="w-4 h-4 mr-2" />
+                        {t('notebook.clearOutput')}
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem 
+                    onClick={onDelete} 
                     disabled={readOnly || totalCells <= 1}
+                    className="text-red-500 focus:text-red-500"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{t('notebook.deleteCell')}</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    {t('notebook.deleteCell')}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
 
-            {/* More menu */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-5.5 w-5.5">
-                  <MoreHorizontal className="w-4 h-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem onClick={() => onInsertAbove('code')} disabled={readOnly}>
-                  <ArrowUpToLine className="w-4 h-4 mr-2" />
-                  {t('notebook.insertCodeAbove')}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => onInsertBelow('code')} disabled={readOnly}>
-                  <ArrowDownToLine className="w-4 h-4 mr-2" />
-                  {t('notebook.insertCodeBelow')}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => onInsertAbove('markdown')} disabled={readOnly}>
-                  <Type className="w-4 h-4 mr-2" />
-                  {t('notebook.insertMarkdownAbove')}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => onInsertBelow('markdown')} disabled={readOnly}>
-                  <Type className="w-4 h-4 mr-2" />
-                  {t('notebook.insertMarkdownBelow')}
-                </DropdownMenuItem>
-                {isCodeCell && hasOutput && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={onClearOutput} disabled={readOnly}>
-                      <X className="w-4 h-4 mr-2" />
-                      {t('notebook.clearOutput')}
-                    </DropdownMenuItem>
-                  </>
-                )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem 
-                  onClick={onDelete} 
-                  disabled={readOnly || totalCells <= 1}
-                  className="text-red-500 focus:text-red-500"
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  {t('notebook.deleteCell')}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {/* Cell number - right aligned */}
+            <span className={cn(
+              'text-[11px] font-mono w-5 text-right tabular-nums',
+              hasError ? 'text-red-500' : 'text-muted-foreground/70'
+            )}>
+              {cellNumber}
+            </span>
           </div>
+        </div>
 
-          {/* Cell content */}
-          <div
-            className={cn(
-              'rounded overflow-hidden border transition-colors',
-              isActive 
-                ? (isDarkMode ? 'border-white/15' : 'border-black/15')
-                : (isDarkMode ? 'border-white/10' : 'border-black/10'),
-              isDarkMode ? 'bg-[#1e1e1e]' : 'bg-white'
-            )}
-          >
-            {isCodeCell ? (
-              // Code editor
-              <div className="[&_.monaco-editor]:pt-0.5 [&_.monaco-editor_.margin]:!bg-transparent">
-                {/* Language indicator */}
+        {/* Cell content */}
+        <div className="px-2 pb-1">
+          {/* Databricks-style Cell title input - only show when active or has title */}
+          {isCodeCell && (isActive || cell.metadata?.title) && (
+            <div className={cn(
+              'flex items-center gap-2 pb-1 mb-1',
+              (isActive || isHovered) ? 'opacity-100' : 'opacity-60'
+            )}>
+              {isTitleEditing ? (
+                <input
+                  type="text"
+                  className={cn(
+                    'flex-1 h-6 px-2 text-[12px] rounded border bg-transparent',
+                    'outline-none focus:border-primary/50',
+                    isDarkMode ? 'border-white/10 text-zinc-300' : 'border-black/10 text-zinc-700'
+                  )}
+                  value={titleValue}
+                  onChange={(e) => setTitleValue(e.target.value)}
+                  onBlur={() => {
+                    setIsTitleEditing(false);
+                    if (titleValue !== cell.metadata?.title) {
+                      onUpdateTitle(titleValue);
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      setIsTitleEditing(false);
+                      if (titleValue !== cell.metadata?.title) {
+                        onUpdateTitle(titleValue);
+                      }
+                    } else if (e.key === 'Escape') {
+                      setIsTitleEditing(false);
+                      setTitleValue(cell.metadata?.title || '');
+                    }
+                  }}
+                  autoFocus
+                  placeholder="Cell title"
+                  disabled={readOnly}
+                />
+              ) : (
+                <button
+                  className={cn(
+                    'flex-1 h-6 px-2 text-[12px] text-left rounded border border-transparent',
+                    'hover:border-border/50 transition-colors',
+                    cell.metadata?.title 
+                      ? (isDarkMode ? 'text-zinc-300' : 'text-zinc-700')
+                      : 'text-muted-foreground/60 italic'
+                  )}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!readOnly) {
+                      setIsTitleEditing(true);
+                    }
+                  }}
+                  disabled={readOnly}
+                >
+                  {cell.metadata?.title || 'Cell title'}
+                </button>
+              )}
+              {!cell.metadata?.title && !isTitleEditing && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-5 px-2 text-[10px] text-muted-foreground hover:text-foreground"
+                  onClick={(e) => { e.stopPropagation(); }}
+                  disabled={readOnly}
+                >
+                  <Sparkles className="w-3 h-3 mr-1" />
+                  Suggest a title
+                </Button>
+              )}
+            </div>
+          )}
+          
+          {isCodeCell ? (
+            // Code editor with magic command prefix
+            <div className="relative">
+              {/* Magic command prefix display */}
+              {hasMagicCommand && (
                 <div className={cn(
-                  'flex items-center gap-1 px-2 py-0.5 border-b',
-                  isDarkMode ? 'border-white/10 bg-black/20' : 'border-black/5 bg-black/5'
+                  'absolute left-0 top-2 z-10 px-2 text-[11px] font-mono',
+                  isDarkMode ? 'text-zinc-500' : 'text-zinc-400'
                 )}>
                   <span className={cn(
-                    'w-4 h-4 rounded text-[9px] font-bold flex items-center justify-center text-white',
-                    langConfig.color
+                    'px-1 py-0.5 rounded',
+                    isDarkMode ? 'bg-zinc-800' : 'bg-zinc-100'
                   )}>
-                    {langConfig.icon}
+                    {langConfig.magicCommand}
                   </span>
-                  <span className="text-[10px] text-muted-foreground">{langConfig.name}</span>
                 </div>
+              )}
+              <div className={cn(
+                '[&_.monaco-editor]:pt-0.5 [&_.monaco-editor_.margin]:!bg-transparent',
+                hasMagicCommand && 'pl-14' // offset for magic command
+              )}>
                 <Editor
                   height={editorHeight}
                   language={langConfig.monacoLanguage}
-                  value={source}
+                  value={hasMagicCommand ? cleanSource : source}
                   onChange={handleEditorChange}
                   onMount={handleEditorDidMount}
                   options={{
                     minimap: { enabled: false },
-                    lineNumbers: 'on',
-                    lineNumbersMinChars: 3,
-                    folding: true,
+                    lineNumbers: 'off',
+                    lineNumbersMinChars: 2,
+                    folding: false,
                     wordWrap: 'on',
                     scrollBeyondLastLine: false,
                     automaticLayout: true,
                     fontSize: 13,
                     fontFamily: '"JetBrains Mono", "Fira Code", "Consolas", monospace',
                     readOnly: readOnly,
-                    renderLineHighlight: isActive ? 'line' : 'none',
+                    renderLineHighlight: 'none',
                     scrollbar: {
                       vertical: 'hidden',
                       horizontal: 'auto',
                       verticalScrollbarSize: 0,
                       horizontalScrollbarSize: 6
                     },
-                    padding: { top: 4, bottom: 4 },
+                    padding: { top: 6, bottom: 6 },
                     overviewRulerLanes: 0,
                     hideCursorInOverviewRuler: true,
                     overviewRulerBorder: false,
                     contextmenu: true,
                     glyphMargin: false,
-                    lineDecorationsWidth: 4,
-                    renderWhitespace: 'selection'
+                    lineDecorationsWidth: 0,
+                    renderWhitespace: 'none'
                   }}
                   theme={isDarkMode ? 'vs-dark' : 'light'}
                 />
               </div>
-            ) : isMarkdownCell ? (
-              // Markdown edit/preview
-              isMarkdownEditing || (isActive && !source) ? (
-                <div className="p-2">
-                  <textarea
-                    className={cn(
-                      'w-full min-h-[60px] p-2 rounded bg-transparent resize-none',
-                      'font-mono text-[13px] outline-none border-none',
-                      'placeholder:text-muted-foreground'
-                    )}
-                    value={source}
-                    onChange={(e) => onUpdate(e.target.value)}
-                    onBlur={() => source && setIsMarkdownEditing(false)}
-                    autoFocus={isMarkdownEditing}
-                    disabled={readOnly}
-                    placeholder={t('notebook.markdownPlaceholder')}
-                  />
-                </div>
-              ) : (
-                <div
-                  onClick={(e) => { e.stopPropagation(); setIsMarkdownEditing(true); }}
-                  className="p-3 cursor-text min-h-[40px] markdown-preview"
-                >
-                  {source ? (
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      rehypePlugins={[rehypeRaw, [rehypeSanitize, defaultSchema]]}
-                    >
-                      {source}
-                    </ReactMarkdown>
-                  ) : (
-                    <span className="text-muted-foreground text-[13px] italic">
-                      {t('notebook.emptyMarkdown')}
-                    </span>
-                  )}
-                </div>
-              )
-            ) : (
-              // Raw cell
-              <pre className="p-3 m-0 font-mono text-[13px]">
-                {source || t('notebook.emptyCell')}
-              </pre>
-            )}
-          </div>
-
-          {/* Cell output */}
-          {isCodeCell && hasOutput && (
-            <div className="mt-1">
-              {/* Output header */}
-              <Collapsible open={!outputCollapsed} onOpenChange={(open) => setOutputCollapsed(!open)}>
-                <CollapsibleTrigger asChild>
-                  <button
-                    className={cn(
-                      'flex items-center gap-1 py-0.5 px-1 rounded cursor-pointer',
-                      'hover:bg-accent transition-colors'
-                    )}
-                    onClick={(e) => e.stopPropagation()}
+              {/* Edit code with Assistant button - Databricks style */}
+              {(isActive || isHovered) && !readOnly && (
+                <div className={cn(
+                  'flex items-center gap-2 mt-1 transition-opacity',
+                  (isActive || isHovered) ? 'opacity-100' : 'opacity-0'
+                )}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-[11px] text-muted-foreground hover:text-foreground"
+                    onClick={(e) => { e.stopPropagation(); }}
                   >
-                    {outputCollapsed ? (
-                      <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                    ) : (
-                      <ChevronDownIcon className="w-4 h-4 text-muted-foreground" />
-                    )}
-                    <StatusIcon />
-                    <span className="text-[11px] text-muted-foreground">
-                      {outputs.length} output{outputs.length > 1 ? 's' : ''}
-                      {hasError && ' (error)'}
-                    </span>
-                    
-                    <div className="flex-1" />
-                    {(isHovered || isActive) && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-5 w-5 text-muted-foreground hover:text-foreground"
-                        onClick={(e) => { e.stopPropagation(); onClearOutput(); }}
-                        disabled={readOnly}
-                      >
-                        <X className="w-3 h-3" />
-                      </Button>
-                    )}
-                  </button>
-                </CollapsibleTrigger>
-
-                {/* Output content */}
-                <CollapsibleContent>
-                  <div
-                    className={cn(
-                      'rounded border max-h-[400px] overflow-auto',
-                      hasError 
-                        ? 'border-red-500/30' 
-                        : (isDarkMode ? 'border-white/10' : 'border-black/10'),
-                      isDarkMode ? 'bg-black/20' : 'bg-black/5'
-                    )}
-                  >
-                    <CellOutputRenderer outputs={outputs} isDarkMode={isDarkMode} />
-                  </div>
-                </CollapsibleContent>
-              </Collapsible>
+                    <Sparkles className="w-3 h-3 mr-1" />
+                    Edit code with Assistant
+                  </Button>
+                </div>
+              )}
             </div>
+          ) : isMarkdownCell ? (
+            // Markdown edit/preview
+            isMarkdownEditing || (isActive && !source) ? (
+              <div className="py-1">
+                <textarea
+                  className={cn(
+                    'w-full min-h-[60px] p-2 rounded bg-transparent resize-none',
+                    'font-mono text-[13px] outline-none border-none',
+                    'placeholder:text-muted-foreground'
+                  )}
+                  value={source}
+                  onChange={(e) => onUpdate(e.target.value)}
+                  onBlur={() => source && setIsMarkdownEditing(false)}
+                  autoFocus={isMarkdownEditing}
+                  disabled={readOnly}
+                  placeholder={t('notebook.markdownPlaceholder')}
+                />
+              </div>
+            ) : (
+              <div
+                onClick={(e) => { e.stopPropagation(); setIsMarkdownEditing(true); }}
+                className="py-2 px-1 cursor-text min-h-[40px] markdown-preview"
+              >
+                {source ? (
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    rehypePlugins={[rehypeRaw, [rehypeSanitize, defaultSchema]]}
+                  >
+                    {source}
+                  </ReactMarkdown>
+                ) : (
+                  <span className="text-muted-foreground text-[13px] italic">
+                    {t('notebook.emptyMarkdown')}
+                  </span>
+                )}
+              </div>
+            )
+          ) : (
+            // Raw cell
+            <pre className="py-2 m-0 font-mono text-[13px]">
+              {source || t('notebook.emptyCell')}
+            </pre>
           )}
         </div>
+
+        {/* Cell output - Databricks style: clean and minimal */}
+        {isCodeCell && hasOutput && !outputCollapsed && (
+          <div className={cn(
+            'mx-2 mb-2 rounded overflow-hidden',
+            hasError 
+              ? (isDarkMode ? 'bg-red-500/10 border border-red-500/20' : 'bg-red-50 border border-red-200')
+              : (isDarkMode ? 'bg-black/20' : 'bg-gray-50')
+          )}>
+            <div className="max-h-[400px] overflow-auto">
+              <CellOutputRenderer outputs={outputs} isDarkMode={isDarkMode} />
+            </div>
+          </div>
+        )}
+        
+        {/* Collapsed output indicator */}
+        {isCodeCell && hasOutput && outputCollapsed && (
+          <div 
+            className={cn(
+              'mx-2 mb-2 px-3 py-1.5 rounded cursor-pointer',
+              'text-[11px] text-muted-foreground',
+              isDarkMode ? 'bg-black/20 hover:bg-black/30' : 'bg-gray-50 hover:bg-gray-100'
+            )}
+            onClick={(e) => { e.stopPropagation(); setOutputCollapsed(false); }}
+          >
+            {hasError ? (
+              <span className="text-red-500">⚠ Output hidden (error)</span>
+            ) : (
+              <span>▸ {outputs.length} output{outputs.length > 1 ? 's' : ''} hidden</span>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Insert button - show between cells */}
+      {/* Insert button - show between cells on hover */}
       {(isActive || isHovered) && !readOnly && (
-        <div className="flex items-center justify-center gap-1 py-1 opacity-60 hover:opacity-100 transition-opacity">
-          <div className={cn('flex-1 h-px', isDarkMode ? 'bg-white/10' : 'bg-black/10')} />
+        <div className="flex items-center justify-center gap-1 py-1.5 opacity-0 hover:opacity-100 transition-opacity">
+          <div className={cn('flex-1 h-px', isDarkMode ? 'bg-white/5' : 'bg-black/5')} />
           <Button
             variant="ghost"
             size="sm"
-            className="h-5.5 px-2 text-[11px]"
+            className="h-5 px-2 text-[10px] text-muted-foreground"
             onClick={(e) => { e.stopPropagation(); onInsertBelow('code'); }}
           >
-            <Code className="w-3 h-3 mr-1" />
+            <Plus className="w-2.5 h-2.5 mr-0.5" />
             Code
           </Button>
           <Button
             variant="ghost"
             size="sm"
-            className="h-5.5 px-2 text-[11px]"
+            className="h-5 px-2 text-[10px] text-muted-foreground"
             onClick={(e) => { e.stopPropagation(); onInsertBelow('markdown'); }}
           >
-            <Type className="w-3 h-3 mr-1" />
-            Markdown
+            <Plus className="w-2.5 h-2.5 mr-0.5" />
+            Text
           </Button>
-          <div className={cn('flex-1 h-px', isDarkMode ? 'bg-white/10' : 'bg-black/10')} />
+          <div className={cn('flex-1 h-px', isDarkMode ? 'bg-white/5' : 'bg-black/5')} />
         </div>
       )}
     </div>
@@ -847,10 +1039,14 @@ export const NotebookEditor: React.FC<NotebookEditorProps> = ({
   
   const [activeCellIndex, setActiveCellIndex] = useState<number>(0);
   const [runningCells, setRunningCells] = useState<Set<number>>(new Set());
+  const [executionStartTimes, setExecutionStartTimes] = useState<Map<number, Date>>(new Map());
   const [isSaving, setIsSaving] = useState(false);
   const [lastSavedTime, setLastSavedTime] = useState<Date | null>(null);
   const [allCollapsed, setAllCollapsed] = useState(false);
   const [selectedKernelSpec, setSelectedKernelSpec] = useState<string>('python3');
+  const [tabsOn, setTabsOn] = useState(true);
+  const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
+  const [rightSidebarTab, setRightSidebarTab] = useState<'info' | 'comments' | 'history' | 'variables'>('info');
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   
@@ -1021,7 +1217,10 @@ export const NotebookEditor: React.FC<NotebookEditorProps> = ({
       }
     }
     
+    // Record start time
+    const startTime = new Date();
     setRunningCells(prev => new Set(prev).add(index));
+    setExecutionStartTimes(prev => new Map(prev).set(index, startTime));
     
     // Clear existing outputs
     const newCells = [...cells];
@@ -1085,12 +1284,23 @@ export const NotebookEditor: React.FC<NotebookEditorProps> = ({
         });
       },
       // onComplete callback
-      (_success: boolean, executionCount?: number) => {
+      (success: boolean, executionCount?: number) => {
+        const endTime = new Date();
+        const execStartTime = executionStartTimes.get(index);
+        const executionDuration = execStartTime 
+          ? `${((endTime.getTime() - execStartTime.getTime()) / 1000).toFixed(1)}s`
+          : '';
+        
         setCells(prevCells => {
           const updated = [...prevCells];
           updated[index] = {
             ...updated[index],
             execution_count: executionCount || null,
+            metadata: {
+              ...updated[index].metadata,
+              executed_at: endTime.toISOString(),
+              execution_time: executionDuration,
+            }
           };
           
           // Trigger pending operation for save
@@ -1124,9 +1334,16 @@ export const NotebookEditor: React.FC<NotebookEditorProps> = ({
           next.delete(index);
           return next;
         });
+        
+        // Clear execution start time
+        setExecutionStartTimes(prev => {
+          const next = new Map(prev);
+          next.delete(index);
+          return next;
+        });
       }
     );
-  }, [cells, isConnected, connectKernel, selectedKernelSpec, executeCode, addPendingOperation, onChange, notebook]);
+  }, [cells, isConnected, connectKernel, selectedKernelSpec, executeCode, addPendingOperation, onChange, notebook, executionStartTimes]);
 
   const handleRunAll = useCallback(async () => {
     for (let i = 0; i < cells.length; i++) {
@@ -1245,6 +1462,28 @@ export const NotebookEditor: React.FC<NotebookEditorProps> = ({
       metadata: {
         ...cell.metadata,
         language: newLanguage
+      }
+    };
+    
+    if (cell.id) {
+      addPendingOperation({
+        op: 'update',
+        cell_id: cell.id,
+        cell: { ...newCells[index], source: textToArray(normalizeText(newCells[index].source)) }
+      });
+    }
+    
+    updateNotebook(newCells);
+  }, [cells, updateNotebook, addPendingOperation]);
+
+  const handleUpdateTitle = useCallback((index: number, title: string) => {
+    const newCells = [...cells];
+    const cell = newCells[index];
+    newCells[index] = {
+      ...cell,
+      metadata: {
+        ...cell.metadata,
+        title: title || undefined  // Remove title if empty
       }
     };
     
@@ -1398,274 +1637,481 @@ export const NotebookEditor: React.FC<NotebookEditorProps> = ({
       )}
       style={{ height }}
     >
-      {/* Toolbar */}
+      {/* Databricks-style Toolbar */}
       <div className={cn(
-        'flex items-center gap-1 px-2 py-1 border-b flex-shrink-0 min-h-9',
-        isDarkMode ? 'bg-[#252526] border-white/10' : 'bg-zinc-100 border-black/10'
+        'flex items-center gap-1 px-2 py-1.5 border-b flex-shrink-0 min-h-10',
+        isDarkMode ? 'bg-[#252526] border-white/10' : 'bg-white border-black/10'
       )}>
-        {/* Run buttons */}
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={() => handleRunCell(activeCellIndex)}
-                disabled={readOnly || cells[activeCellIndex]?.cell_type !== 'code' || kernelStatus === 'connecting'}
-              >
-                <Play className="w-4 h-4" />
+        {/* Left side: Menu items */}
+        <div className="flex items-center gap-1 mr-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs font-normal">
+                File
               </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t('notebook.runCell')} (Shift+Enter)</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={handleRunAll}
-                disabled={readOnly || kernelStatus === 'connecting'}
-              >
-                <ListOrdered className="w-4 h-4" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-48">
+              <DropdownMenuItem onClick={handleSave} disabled={readOnly || !isDirty}>
+                <Save className="w-4 h-4 mr-2" />
+                Save
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleClearAllOutputs} disabled={readOnly}>
+                <X className="w-4 h-4 mr-2" />
+                Clear all outputs
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs font-normal">
+                Edit
               </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t('notebook.runAll')}</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-48">
+              <DropdownMenuItem onClick={() => handleInsertBelow(activeCellIndex, 'code')} disabled={readOnly}>
+                <Plus className="w-4 h-4 mr-2" />
+                Add code cell
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleInsertBelow(activeCellIndex, 'markdown')} disabled={readOnly}>
+                <Type className="w-4 h-4 mr-2" />
+                Add markdown cell
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs font-normal">
+                View
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-48">
+              <DropdownMenuItem onClick={() => setAllCollapsed(!allCollapsed)}>
+                {allCollapsed ? <ChevronsUpDown className="w-4 h-4 mr-2" /> : <ChevronsDownUp className="w-4 h-4 mr-2" />}
+                {allCollapsed ? 'Expand all cells' : 'Collapse all cells'}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs font-normal">
+                Run
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-48">
+              <DropdownMenuItem onClick={() => handleRunCell(activeCellIndex)} disabled={readOnly || cells[activeCellIndex]?.cell_type !== 'code'}>
+                <Play className="w-4 h-4 mr-2" />
+                Run cell
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleRunAll} disabled={readOnly}>
+                <ListOrdered className="w-4 h-4 mr-2" />
+                Run all
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleInterruptKernel} disabled={kernelStatus !== 'busy'}>
+                <Square className="w-4 h-4 mr-2" />
+                Interrupt
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleRestartKernel} disabled={kernelStatus === 'disconnected'}>
+                <RotateCcw className="w-4 h-4 mr-2" />
+                Restart kernel
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          
+          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs font-normal">
+            Help
+          </Button>
+        </div>
 
         <Separator orientation="vertical" className="h-5 mx-1" />
 
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={handleInterruptKernel}
-                disabled={kernelStatus !== 'busy'}
-              >
-                <Square className="w-4 h-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t('notebook.stopExecution')}</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={handleRestartKernel}
-                disabled={kernelStatus === 'disconnected'}
-              >
-                <RotateCcw className="w-4 h-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t('notebook.restartKernel')}</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        {/* Language selector */}
+        <Select value={language} disabled>
+          <SelectTrigger className="h-6 w-[70px] text-[11px] font-medium">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="python">Python</SelectItem>
+            <SelectItem value="sql">SQL</SelectItem>
+            <SelectItem value="r">R</SelectItem>
+            <SelectItem value="scala">Scala</SelectItem>
+          </SelectContent>
+        </Select>
 
         <Separator orientation="vertical" className="h-5 mx-1" />
 
-        {/* Clear outputs */}
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={handleClearAllOutputs}
-                disabled={readOnly}
-              >
-                <X className="w-4 h-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t('notebook.clearAllOutputs')}</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        {/* Tabs toggle */}
+        <Button 
+          variant="ghost" 
+          size="sm" 
+          className="h-6 px-2 text-[11px]"
+          onClick={() => setTabsOn(!tabsOn)}
+        >
+          Tabs: {tabsOn ? 'ON' : 'OFF'}
+          <ChevronDown className="w-3 h-3 ml-1" />
+        </Button>
 
-        {/* Collapse/expand all */}
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={() => setAllCollapsed(!allCollapsed)}
-              >
-                {allCollapsed ? <ChevronsUpDown className="w-4 h-4" /> : <ChevronsDownUp className="w-4 h-4" />}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{allCollapsed ? t('notebook.expandAll') : t('notebook.collapseAll')}</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        {/* Favorite button */}
+        <Button variant="ghost" size="icon" className="h-6 w-6">
+          <Star className="w-3.5 h-3.5" />
+        </Button>
+
+        {/* Last edit info */}
+        <span className="text-[11px] text-muted-foreground ml-2">
+          {lastSavedTime 
+            ? `Last edit was ${formatTimeAgo(lastSavedTime)}`
+            : isDirty 
+              ? 'Unsaved changes'
+              : ''}
+        </span>
 
         <div className="flex-1" />
 
-        {/* Save status */}
-        <div className="flex items-center gap-1 mr-2">
-          {isSaving ? (
-            <div className="flex items-center gap-1">
-              <RefreshCw className="w-3.5 h-3.5 text-primary animate-spin" />
-              <span className="text-[11px] text-muted-foreground">Saving...</span>
-            </div>
-          ) : isDirty ? (
-            <div className="flex items-center gap-1">
-              <Circle className="w-2 h-2 fill-amber-500 text-amber-500" />
-              <span className="text-[11px] text-amber-500">Modified</span>
-            </div>
-          ) : lastSavedTime ? (
-            <div className="flex items-center gap-1">
-              <Cloud className="w-3.5 h-3.5 text-green-500" />
-              <span className="text-[11px] text-muted-foreground">Saved</span>
-            </div>
-          ) : null}
-        </div>
+        {/* Right side actions */}
+        <div className="flex items-center gap-2">
+          {/* Run all button */}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-3 text-xs gap-1"
+            onClick={handleRunAll}
+            disabled={readOnly || kernelStatus === 'connecting'}
+          >
+            <Play className="w-3.5 h-3.5" />
+            Run all
+          </Button>
 
-        {/* Save button */}
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className={cn('h-7 w-7', isDirty && 'text-primary')}
-                onClick={handleSave}
-                disabled={readOnly || isSaving || !isDirty}
-              >
-                <Save className="w-4 h-4" />
+          {/* Compute selector */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-7 px-3 text-xs gap-1">
+                <Circle className={cn(
+                  'w-2 h-2',
+                  isConnected ? 'fill-green-500 text-green-500' : 'fill-gray-400 text-gray-400'
+                )} />
+                {isConnected ? (currentKernel?.display_name || 'Serverless') : 'Serverless'}
+                <ChevronDown className="w-3 h-3 ml-1" />
               </Button>
-            </TooltipTrigger>
-            <TooltipContent>Save ({navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+S)</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-
-        <Separator orientation="vertical" className="h-5 mx-1" />
-
-        {/* Kernel selector */}
-        {!isConnected && Object.keys(kernelSpecs).length > 0 && (
-          <Select value={selectedKernelSpec} onValueChange={setSelectedKernelSpec}>
-            <SelectTrigger className="h-6 w-[100px] text-[11px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {Object.entries(kernelSpecs).map(([name, spec]) => (
-                <SelectItem key={name} value={name} className="text-xs">
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuItem onClick={handleConnectKernel}>
+                {isConnected ? <Unlink className="w-4 h-4 mr-2" /> : <Link className="w-4 h-4 mr-2" />}
+                {isConnected ? 'Disconnect' : 'Connect to compute'}
+              </DropdownMenuItem>
+              {!isConnected && Object.entries(kernelSpecs).map(([name, spec]) => (
+                <DropdownMenuItem 
+                  key={name} 
+                  onClick={() => { setSelectedKernelSpec(name); connectKernel(name); }}
+                >
+                  <Settings className="w-4 h-4 mr-2" />
                   {spec.display_name}
-                </SelectItem>
+                </DropdownMenuItem>
               ))}
-            </SelectContent>
-          </Select>
-        )}
+              {isConnected && (
+                <DropdownMenuItem onClick={handleRestartKernel}>
+                  <RotateCcw className="w-4 h-4 mr-2" />
+                  Restart kernel
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-        {/* Kernel connect button */}
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className={cn('h-7 w-7', isConnected && 'text-green-500')}
-                onClick={handleConnectKernel}
-                disabled={isConnecting}
-              >
-                {isConnected ? <Link className="w-4 h-4" /> : <Unlink className="w-4 h-4" />}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{isConnected ? 'Disconnect Kernel' : 'Connect Kernel'}</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+          {/* Schedule button */}
+          <Button variant="outline" size="sm" className="h-7 px-3 text-xs gap-1">
+            <Calendar className="w-3.5 h-3.5" />
+            Schedule
+          </Button>
 
-        {/* Kernel status */}
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className={cn(
-                'flex items-center gap-1 px-2 py-0.5 rounded cursor-default transition-colors',
-                kernelConfig.bgColor
-              )}>
-                <span className={kernelConfig.color}>{kernelConfig.icon}</span>
-                <span className={cn('text-[11px] font-medium', kernelConfig.color)}>
-                  {kernelConfig.label}
-                </span>
-              </div>
-            </TooltipTrigger>
-            <TooltipContent>
-              Kernel: {kernelConfig.label}{currentKernel ? ` (${currentKernel.name})` : ''}
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+          {/* Share button */}
+          <Button variant="default" size="sm" className="h-7 px-3 text-xs gap-1">
+            <Share2 className="w-3.5 h-3.5" />
+            Share
+          </Button>
 
-        {/* Language badge */}
-        <span className={cn(
-          'h-5 px-2 text-[11px] font-medium rounded flex items-center',
-          isDarkMode ? 'bg-white/10 text-zinc-300' : 'bg-black/10 text-zinc-600'
-        )}>
-          {language.charAt(0).toUpperCase() + language.slice(1)}
-        </span>
+          <Separator orientation="vertical" className="h-5 mx-1" />
+
+          {/* Databricks-style right sidebar toggle buttons */}
+          <div className="flex items-center">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={cn(
+                      'h-7 w-7',
+                      rightSidebarOpen && rightSidebarTab === 'comments' && 'bg-accent'
+                    )}
+                    onClick={() => {
+                      if (rightSidebarOpen && rightSidebarTab === 'comments') {
+                        setRightSidebarOpen(false);
+                      } else {
+                        setRightSidebarOpen(true);
+                        setRightSidebarTab('comments');
+                      }
+                    }}
+                  >
+                    <MessageSquare className="w-4 h-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Comments</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={cn(
+                      'h-7 w-7',
+                      rightSidebarOpen && rightSidebarTab === 'history' && 'bg-accent'
+                    )}
+                    onClick={() => {
+                      if (rightSidebarOpen && rightSidebarTab === 'history') {
+                        setRightSidebarOpen(false);
+                      } else {
+                        setRightSidebarOpen(true);
+                        setRightSidebarTab('history');
+                      }
+                    }}
+                  >
+                    <History className="w-4 h-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Version history</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={cn(
+                      'h-7 w-7',
+                      rightSidebarOpen && rightSidebarTab === 'variables' && 'bg-accent'
+                    )}
+                    onClick={() => {
+                      if (rightSidebarOpen && rightSidebarTab === 'variables') {
+                        setRightSidebarOpen(false);
+                      } else {
+                        setRightSidebarOpen(true);
+                        setRightSidebarTab('variables');
+                      }
+                    }}
+                  >
+                    <Hash className="w-4 h-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Variables</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={cn(
+                      'h-7 w-7',
+                      rightSidebarOpen && rightSidebarTab === 'info' && 'bg-accent'
+                    )}
+                    onClick={() => {
+                      if (rightSidebarOpen && rightSidebarTab === 'info') {
+                        setRightSidebarOpen(false);
+                      } else {
+                        setRightSidebarOpen(true);
+                        setRightSidebarTab('info');
+                      }
+                    }}
+                  >
+                    <Info className="w-4 h-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Notebook details</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+        </div>
       </div>
 
-      {/* Cells container */}
-      <div className="flex-1 overflow-auto py-2 custom-scrollbar">
-        {/* Top add button */}
-        {!readOnly && (
-          <div className="flex items-center justify-center gap-1 py-1 px-12 opacity-50 hover:opacity-100 transition-opacity">
-            <div className={cn('flex-1 h-px', isDarkMode ? 'bg-white/10' : 'bg-black/10')} />
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-5.5 px-2 text-[11px]"
-              onClick={() => handleInsertAbove(0, 'code')}
-            >
-              <Plus className="w-3 h-3 mr-1" />
-              Add Cell
-            </Button>
-            <div className={cn('flex-1 h-px', isDarkMode ? 'bg-white/10' : 'bg-black/10')} />
+      {/* Main content area with optional right sidebar */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Cells container */}
+        <div className="flex-1 overflow-auto py-3 custom-scrollbar">
+          {/* Cells */}
+          {cells.map((cell, index) => (
+            <NotebookCellComponent
+              key={cell.id || index}
+              cell={cell}
+              index={index}
+              cellNumber={index + 1}
+              isActive={index === activeCellIndex}
+              isRunning={runningCells.has(index)}
+              executionStartTime={executionStartTimes.get(index)}
+              onActivate={() => setActiveCellIndex(index)}
+              onUpdate={(source) => handleUpdateCell(index, source)}
+              onUpdateTitle={(title) => handleUpdateTitle(index, title)}
+              onRun={() => handleRunCell(index)}
+              onDelete={() => handleDeleteCell(index)}
+              onDuplicate={() => handleDuplicateCell(index)}
+              onMoveUp={() => handleMoveUp(index)}
+              onMoveDown={() => handleMoveDown(index)}
+              onInsertAbove={(type) => handleInsertAbove(index, type)}
+              onInsertBelow={(type) => handleInsertBelow(index, type)}
+              onChangeType={(type) => handleChangeType(index, type)}
+              onChangeLanguage={(lang) => handleChangeLanguage(index, lang)}
+              onClearOutput={() => handleClearOutput(index)}
+              canMoveUp={index > 0}
+              canMoveDown={index < cells.length - 1}
+              readOnly={readOnly}
+              language={language}
+              totalCells={cells.length}
+              isDarkMode={isDarkMode}
+            />
+          ))}
+
+          {/* Bottom add cell button */}
+          {!readOnly && (
+            <div className="flex items-center justify-center gap-1 py-2 px-12 opacity-40 hover:opacity-100 transition-opacity">
+              <div className={cn('flex-1 h-px', isDarkMode ? 'bg-white/10' : 'bg-black/10')} />
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-3 text-[11px] text-muted-foreground"
+                onClick={() => handleInsertBelow(cells.length - 1, 'code')}
+              >
+                <Plus className="w-3 h-3 mr-1" />
+                Add code cell
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-3 text-[11px] text-muted-foreground"
+                onClick={() => handleInsertBelow(cells.length - 1, 'markdown')}
+              >
+                <Plus className="w-3 h-3 mr-1" />
+                Add text cell
+              </Button>
+              <div className={cn('flex-1 h-px', isDarkMode ? 'bg-white/10' : 'bg-black/10')} />
+            </div>
+          )}
+
+          {/* Bottom spacer */}
+          <div className="h-24" />
+        </div>
+
+        {/* Databricks-style Right Sidebar */}
+        {rightSidebarOpen && (
+          <div className={cn(
+            'w-80 border-l flex flex-col flex-shrink-0',
+            isDarkMode ? 'bg-[#252526] border-white/10' : 'bg-gray-50 border-black/10'
+          )}>
+            {/* Sidebar header */}
+            <div className={cn(
+              'flex items-center justify-between px-4 py-3 border-b',
+              isDarkMode ? 'border-white/10' : 'border-black/10'
+            )}>
+              <span className="text-sm font-medium">
+                {rightSidebarTab === 'info' && 'Notebook details'}
+                {rightSidebarTab === 'comments' && 'Comments'}
+                {rightSidebarTab === 'history' && 'Version history'}
+                {rightSidebarTab === 'variables' && 'Variables'}
+              </span>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={() => setRightSidebarOpen(false)}
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+
+            {/* Sidebar content */}
+            <div className="flex-1 overflow-auto p-4">
+              {rightSidebarTab === 'info' && (
+                <div className="space-y-4">
+                  {/* About this notebook */}
+                  <div>
+                    <h4 className="text-xs font-semibold text-muted-foreground mb-2">About this notebook</h4>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Language</span>
+                        <span>{language === 'python' ? 'Python' : language.toUpperCase()}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Cells</span>
+                        <span>{cells.length}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Last saved</span>
+                        <span>{lastSavedTime ? formatTimeAgo(lastSavedTime) : 'Not saved'}</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <Separator />
+                  
+                  {/* Kernel info */}
+                  <div>
+                    <h4 className="text-xs font-semibold text-muted-foreground mb-2">Compute</h4>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between items-center">
+                        <span className="text-muted-foreground">Status</span>
+                        <span className={cn(
+                          'flex items-center gap-1',
+                          kernelStatus === 'idle' && 'text-green-500',
+                          kernelStatus === 'busy' && 'text-amber-500',
+                          kernelStatus === 'disconnected' && 'text-muted-foreground'
+                        )}>
+                          <Circle className={cn(
+                            'w-2 h-2',
+                            kernelStatus === 'idle' && 'fill-green-500',
+                            kernelStatus === 'busy' && 'fill-amber-500'
+                          )} />
+                          {kernelStatus.charAt(0).toUpperCase() + kernelStatus.slice(1)}
+                        </span>
+                      </div>
+                      {isConnected && currentKernel && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Kernel</span>
+                          <span>{currentKernel.display_name}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {rightSidebarTab === 'comments' && (
+                <div className="text-sm text-muted-foreground text-center py-8">
+                  No comments yet
+                </div>
+              )}
+
+              {rightSidebarTab === 'history' && (
+                <div className="text-sm text-muted-foreground text-center py-8">
+                  Version history not available
+                </div>
+              )}
+
+              {rightSidebarTab === 'variables' && (
+                <div className="text-sm text-muted-foreground text-center py-8">
+                  {isConnected ? 'Run cells to see variables' : 'Connect to compute to see variables'}
+                </div>
+              )}
+            </div>
           </div>
         )}
-
-        {/* Cells */}
-        {cells.map((cell, index) => (
-          <NotebookCellComponent
-            key={cell.id || index}
-            cell={cell}
-            index={index}
-            isActive={index === activeCellIndex}
-            isRunning={runningCells.has(index)}
-            onActivate={() => setActiveCellIndex(index)}
-            onUpdate={(source) => handleUpdateCell(index, source)}
-            onRun={() => handleRunCell(index)}
-            onDelete={() => handleDeleteCell(index)}
-            onDuplicate={() => handleDuplicateCell(index)}
-            onMoveUp={() => handleMoveUp(index)}
-            onMoveDown={() => handleMoveDown(index)}
-            onInsertAbove={(type) => handleInsertAbove(index, type)}
-            onInsertBelow={(type) => handleInsertBelow(index, type)}
-            onChangeType={(type) => handleChangeType(index, type)}
-            onChangeLanguage={(lang) => handleChangeLanguage(index, lang)}
-            onClearOutput={() => handleClearOutput(index)}
-            canMoveUp={index > 0}
-            canMoveDown={index < cells.length - 1}
-            readOnly={readOnly}
-            language={language}
-            totalCells={cells.length}
-            isDarkMode={isDarkMode}
-          />
-        ))}
-
-        {/* Bottom spacer */}
-        <div className="h-24" />
       </div>
     </div>
   );

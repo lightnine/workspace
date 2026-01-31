@@ -165,6 +165,10 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
   const [currentView, setCurrentView] = useState<'users' | 'userFiles'>('users');
   const [selectedUser, setSelectedUser] = useState<UserResponse | null>(null);
   
+  // Folder navigation state (for drill-down into subdirectories)
+  const [currentFolder, setCurrentFolder] = useState<FileItem | null>(null);
+  const [folderPath, setFolderPath] = useState<FileItem[]>([]);
+  
   // Sort state
   type SortOption = 'dateCreated' | 'name' | 'type';
   const [sortBy, setSortBy] = useState<SortOption>('name');
@@ -200,6 +204,35 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
     }
   }, [currentUser?.email]);
 
+  // Sync currentFolder with updated fileTree after refresh
+  useEffect(() => {
+    if (currentFolder && fileTree.length > 0) {
+      // Find the updated folder in the new fileTree
+      const findFolder = (items: FileItem[], targetId: number): FileItem | null => {
+        for (const item of items) {
+          if (item.id === targetId) return item;
+          if (item.children) {
+            const found = findFolder(item.children, targetId);
+            if (found) return found;
+          }
+        }
+        return null;
+      };
+      
+      const updatedFolder = findFolder(fileTree, currentFolder.id);
+      if (updatedFolder) {
+        setCurrentFolder(updatedFolder);
+        // Also update the folderPath with fresh data
+        setFolderPath(prev => 
+          prev.map(f => {
+            const updated = findFolder(fileTree, f.id);
+            return updated || f;
+          })
+        );
+      }
+    }
+  }, [fileTree]);
+
   const loadUsers = async () => {
     try {
       setLoading(true);
@@ -227,12 +260,45 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
     setSelectedUser(user);
     setSelectedUserEmail(user.email);
     setCurrentView('userFiles');
+    // Reset folder navigation when selecting a user
+    setCurrentFolder(null);
+    setFolderPath([]);
     onSelectUserDirectory?.(user.email);
   };
 
   const handleBackToUsers = () => {
-    setCurrentView('users');
-    setSelectedUser(null);
+    // If we're in a subfolder, go back one level
+    if (folderPath.length > 0) {
+      const newPath = [...folderPath];
+      newPath.pop();
+      setFolderPath(newPath);
+      setCurrentFolder(newPath.length > 0 ? newPath[newPath.length - 1] : null);
+    } else {
+      // If at root level, go back to users list
+      setCurrentView('users');
+      setSelectedUser(null);
+      setCurrentFolder(null);
+      setFolderPath([]);
+    }
+  };
+
+  // Navigate into a folder
+  const handleFolderNavigate = (folder: FileItem) => {
+    setFolderPath(prev => [...prev, folder]);
+    setCurrentFolder(folder);
+  };
+
+  // Navigate to a specific folder in the breadcrumb path
+  const handleBreadcrumbNavigate = (index: number) => {
+    if (index < 0) {
+      // Go to root
+      setCurrentFolder(null);
+      setFolderPath([]);
+    } else {
+      const newPath = folderPath.slice(0, index + 1);
+      setFolderPath(newPath);
+      setCurrentFolder(newPath[newPath.length - 1]);
+    }
   };
 
   const toggleExpand = (itemId: number) => {
@@ -248,7 +314,8 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
   const handleItemClick = async (item: FileItem) => {
     setSelectedNodeId(item.id);
     if (item.type === 'directory') {
-      toggleExpand(item.id);
+      // Navigate into the folder instead of expanding
+      handleFolderNavigate(item);
     } else {
       try {
         await openFile(item);
@@ -291,6 +358,12 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
         await createFile(name, '', parentId);
       }
       await refreshFileTree();
+      // 创建成功后自动展开父目录
+      if (parentId !== undefined) {
+        const newExpanded = new Set(expandedNodes);
+        newExpanded.add(parentId);
+        setExpandedNodes(newExpanded);
+      }
       setCreateDialog({ open: false, type: null });
       setNewName('');
       setSnackbar({ open: true, message: t('explorer.createSuccess'), severity: 'success' });
@@ -526,7 +599,7 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
           break;
         case 'copyFullPath':
           try {
-            await navigator.clipboard.writeText(item.path);
+            await navigator.clipboard.writeText(item.full_path);
             setSnackbar({ open: true, message: t('explorer.copiedToClipboard'), severity: 'success' });
           } catch {
             setSnackbar({ open: true, message: t('explorer.copyFailed'), severity: 'error' });
@@ -971,7 +1044,7 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
           break;
         case 'copyFullPath':
           try {
-            await navigator.clipboard.writeText(item.path);
+            await navigator.clipboard.writeText(item.full_path);
             setSnackbar({ open: true, message: t('explorer.copiedToClipboard'), severity: 'success' });
           } catch {
             setSnackbar({ open: true, message: t('explorer.copyFailed'), severity: 'error' });
@@ -1023,48 +1096,49 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
     };
 
     return (
-      <ContextMenu key={item.id}>
-        <ContextMenuTrigger asChild>
-          <button
-            className={cn(
-              'w-full group flex items-center gap-2 px-3 py-2 text-[13px] transition-colors',
-              'hover:bg-accent/50 border-b border-border/50',
-              isSelected && 'bg-primary/10 hover:bg-primary/15'
-            )}
-            onClick={() => handleItemClick(item)}
-          >
-            {/* Icon */}
-            <span className="flex-shrink-0">
-              {isFolder ? (
-                <Folder className="w-4 h-4 text-amber-500" />
-              ) : (
-                <span style={{ color: fileConfig?.color }}>
-                  {fileConfig?.icon}
-                </span>
+      <div key={item.id} className="group">
+        <ContextMenu>
+          <ContextMenuTrigger asChild>
+            <button
+              className={cn(
+                'w-full flex items-center gap-2 px-3 py-2 text-[13px] transition-colors',
+                'hover:bg-accent/50 border-b border-border/50',
+                isSelected && 'bg-primary/10 hover:bg-primary/15'
               )}
-            </span>
-            
-            {/* File name */}
-            <span className={cn(
-              'flex-1 truncate text-left',
-              isSelected && 'font-medium'
-            )}>
-              {item.name}
-            </span>
-            
-            {/* More options button */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  className={cn(
-                    'opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-accent',
-                    'transition-opacity focus:opacity-100'
-                  )}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <MoreVertical className="w-4 h-4 text-muted-foreground" />
-                </button>
-              </DropdownMenuTrigger>
+              onClick={() => handleItemClick(item)}
+            >
+              {/* Icon */}
+              <span className="flex-shrink-0">
+                {isFolder ? (
+                  <Folder className="w-4 h-4 text-amber-500" />
+                ) : (
+                  <span style={{ color: fileConfig?.color }}>
+                    {fileConfig?.icon}
+                  </span>
+                )}
+              </span>
+              
+              {/* File name */}
+              <span className={cn(
+                'flex-1 truncate text-left',
+                isSelected && 'font-medium'
+              )}>
+                {item.name}
+              </span>
+              
+              {/* More options button */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className={cn(
+                      'opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-accent',
+                      'transition-opacity focus:opacity-100'
+                    )}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <MoreVertical className="w-4 h-4 text-muted-foreground" />
+                  </button>
+                </DropdownMenuTrigger>
               <DropdownMenuContent className="w-48" align="end">
                 {!isFolder && (
                   <DropdownMenuItem onClick={() => handleContextAction('openInNewTab')}>
@@ -1281,6 +1355,7 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
+      </div>
     );
   };
 
@@ -1356,7 +1431,7 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
       ) : (
         // User files view (drill-down)
         <div className="h-full flex flex-col">
-          {/* Header with back button and user email */}
+          {/* Header with back button and breadcrumb */}
           <div className="flex items-center justify-between px-2 py-2 border-b border-border">
             <div className="flex items-center gap-1 min-w-0 flex-1">
               <Button
@@ -1367,7 +1442,10 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
-              <span className="font-semibold text-sm truncate">{selectedUser?.email || 'Users'}</span>
+              {/* Show current folder name or user email */}
+              <span className="font-semibold text-sm truncate">
+                {currentFolder ? currentFolder.name : (selectedUser?.email || 'Users')}
+              </span>
             </div>
             <div className="flex items-center gap-1 flex-shrink-0">
               {/* Sort dropdown */}
@@ -1429,7 +1507,7 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={async () => {
                         if (selectedUser) {
-                          await navigator.clipboard.writeText(`/Users/${selectedUser.email}`);
+                          await navigator.clipboard.writeText(`/Workspace/Users/${selectedUser.email}`);
                           setSnackbar({ open: true, message: t('explorer.copiedToClipboard'), severity: 'success' });
                         }
                       }}>
@@ -1447,14 +1525,14 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
                     </DropdownMenuSubTrigger>
                     <DropdownMenuSubContent className="w-52">
                       <DropdownMenuItem onClick={() => {
-                        setCreateDialog({ open: true, type: 'directory', parentId: undefined });
+                        setCreateDialog({ open: true, type: 'directory', parentId: currentFolder?.id });
                         setNewName('');
                       }}>
                         <FolderPlus className="w-4 h-4 mr-2" />
                         {t('explorer.newFolder')}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => {
-                        setCreateDialog({ open: true, type: 'gitFolder', parentId: undefined });
+                        setCreateDialog({ open: true, type: 'gitFolder', parentId: currentFolder?.id });
                         setNewName('');
                       }}>
                         <GitBranch className="w-4 h-4 mr-2" />
@@ -1462,21 +1540,21 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onClick={() => {
-                        setCreateDialog({ open: true, type: 'notebook', parentId: undefined });
+                        setCreateDialog({ open: true, type: 'notebook', parentId: currentFolder?.id });
                         setNewName('');
                       }}>
                         <Book className="w-4 h-4 mr-2" />
                         {t('explorer.newNotebook')}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => {
-                        setCreateDialog({ open: true, type: 'file', parentId: undefined });
+                        setCreateDialog({ open: true, type: 'file', parentId: currentFolder?.id });
                         setNewName('');
                       }}>
                         <FilePlus className="w-4 h-4 mr-2" />
                         {t('explorer.newFile')}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => {
-                        setCreateDialog({ open: true, type: 'query', parentId: undefined });
+                        setCreateDialog({ open: true, type: 'query', parentId: currentFolder?.id });
                         setNewName('');
                       }}>
                         <Database className="w-4 h-4 mr-2" />
@@ -1592,15 +1670,26 @@ export const UserDirectoryTree: React.FC<UserDirectoryTreeProps> = ({
               <div className="px-4 py-8 text-sm text-muted-foreground text-center">
                 {t('common.noPermission', { defaultValue: '暂无权限查看' })}
               </div>
-            ) : fileTree.length === 0 ? (
-              <div className="px-4 py-8 text-sm text-muted-foreground text-center">
-                {t('common.noData')}
-              </div>
-            ) : (
-              <div>
-                {sortFiles(fileTree).map(item => renderFlatFileItem(item))}
-              </div>
-            )}
+            ) : (() => {
+              // Get items to display based on current folder
+              const itemsToDisplay = currentFolder 
+                ? (currentFolder.children || [])
+                : fileTree;
+              
+              if (itemsToDisplay.length === 0) {
+                return (
+                  <div className="px-4 py-8 text-sm text-muted-foreground text-center">
+                    {t('common.noData')}
+                  </div>
+                );
+              }
+              
+              return (
+                <div>
+                  {sortFiles(itemsToDisplay).map(item => renderFlatFileItem(item))}
+                </div>
+              );
+            })()}
           </ScrollArea>
         </div>
       )}

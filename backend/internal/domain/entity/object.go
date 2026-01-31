@@ -83,6 +83,7 @@ type ObjectResponse struct {
 	Name           string            `json:"name"`
 	Type           ObjectType        `json:"type"`
 	Path           string            `json:"path"`
+	FullPath       string            `json:"full_path"` // Databricks-style path: /Workspace/Users/{email}/...
 	ParentID       *int64            `json:"parent_id,omitempty"`
 	Size           int64             `json:"size"`
 	Description    string            `json:"description,omitempty"`
@@ -101,6 +102,7 @@ func (o *Object) ToResponse() *ObjectResponse {
 		Name:           o.Name,
 		Type:           o.Type,
 		Path:           o.Path,
+		FullPath:       ConvertToFullPath(o.Path),
 		ParentID:       o.ParentID,
 		Size:           o.Size,
 		Description:    o.Description,
@@ -121,6 +123,41 @@ func (o *Object) ToResponse() *ObjectResponse {
 	}
 
 	return resp
+}
+
+// ConvertToFullPath converts internal storage path to Databricks-style full path
+// Internal path: /{appID}/{email}/xxx -> Full path: /Workspace/Users/{email}/xxx
+// Internal path: /{appID}/{email}     -> Full path: /Workspace/Users/{email}
+func ConvertToFullPath(internalPath string) string {
+	// Split path into parts
+	parts := strings.Split(strings.TrimPrefix(internalPath, "/"), "/")
+	if len(parts) < 2 {
+		// Path doesn't have enough parts, return as is
+		return internalPath
+	}
+
+	// parts[0] is appID (UUID format, like 09552693-d720-41cf-b8b3-0edad69c4015)
+	// parts[1] is email (contains @, like tt@tencent.com)
+	// parts[2:] is the rest of the path
+	
+	// Check if parts[1] looks like an email (contains @)
+	// If not, the path might be malformed (missing email directory)
+	email := parts[1]
+	if !strings.Contains(email, "@") {
+		// Path might be /{appID}/{filename} without email directory
+		// In this case, we can't determine the correct full path
+		// Return a path that indicates the issue
+		return "/Workspace/Users/" + strings.Join(parts[1:], "/")
+	}
+	
+	// Build the rest of the path
+	if len(parts) > 2 {
+		restPath := strings.Join(parts[2:], "/")
+		return "/Workspace/Users/" + email + "/" + restPath
+	}
+	
+	// Only appID and email, no additional path
+	return "/Workspace/Users/" + email
 }
 
 // IsDirectory checks if the object is a directory

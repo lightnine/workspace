@@ -113,14 +113,33 @@ func NewUseCase(
 }
 
 func (u *objectUseCase) CreateDirectory(ctx context.Context, creatorID uuid.UUID, appID, email string, input *CreateDirectoryInput) (*entity.ObjectResponse, error) {
-	// Build path - 在用户目录下创建
-	// 用户目录路径: /{appID}/{email}/{name}
-	userDir := "/" + appID + "/" + email
-	path := userDir + "/" + input.Name
+	var path string
+	var parentID *int64
 
-	// 确保用户目录存在
-	if err := u.storage.CreateDirectory(ctx, userDir); err != nil {
-		// 忽略已存在的错误
+	if input.ParentID != nil {
+		// 如果指定了父目录，在父目录下创建
+		parent, err := u.objectRepo.GetByID(ctx, *input.ParentID)
+		if err != nil {
+			if apperrors.IsNotFound(err) {
+				return nil, apperrors.NotFoundError("parent directory")
+			}
+			return nil, apperrors.InternalError("failed to get parent directory", err)
+		}
+		if !parent.IsDirectory() {
+			return nil, apperrors.ValidationError("parent is not a directory")
+		}
+		path = parent.Path + "/" + input.Name
+		parentID = input.ParentID
+	} else {
+		// Build path - 在用户目录下创建
+		// 用户目录路径: /{appID}/{email}/{name}
+		userDir := "/" + appID + "/" + email
+		path = userDir + "/" + input.Name
+
+		// 确保用户目录存在
+		if err := u.storage.CreateDirectory(ctx, userDir); err != nil {
+			// 忽略已存在的错误
+		}
 	}
 
 	// Create directory in storage
@@ -134,13 +153,13 @@ func (u *objectUseCase) CreateDirectory(ctx context.Context, creatorID uuid.UUID
 		return nil, apperrors.InternalError("failed to get inode", err)
 	}
 
-	// Create object record - 只记录 inode 和创建人
+	// Create object record
 	obj := &entity.Object{
 		ID:          inode,
 		Name:        input.Name,
 		Type:        entity.ObjectTypeDirectory,
 		Path:        path,
-		ParentID:    nil, // 不记录父子关系
+		ParentID:    parentID,
 		CreatorID:   creatorID,
 		Description: input.Description,
 	}
@@ -160,14 +179,33 @@ func (u *objectUseCase) CreateFile(ctx context.Context, creatorID uuid.UUID, app
 		input.Type = entity.InferTypeFromExtension(input.Name)
 	}
 
-	// Build path - 在用户目录下创建
-	// 用户目录路径: /{appID}/{email}/{name}
-	userDir := "/" + appID + "/" + email
-	path := userDir + "/" + input.Name
+	var path string
+	var parentID *int64
 
-	// 确保用户目录存在
-	if err := u.storage.CreateDirectory(ctx, userDir); err != nil {
-		// 忽略已存在的错误
+	if input.ParentID != nil {
+		// 如果指定了父目录，在父目录下创建
+		parent, err := u.objectRepo.GetByID(ctx, *input.ParentID)
+		if err != nil {
+			if apperrors.IsNotFound(err) {
+				return nil, apperrors.NotFoundError("parent directory")
+			}
+			return nil, apperrors.InternalError("failed to get parent directory", err)
+		}
+		if !parent.IsDirectory() {
+			return nil, apperrors.ValidationError("parent is not a directory")
+		}
+		path = parent.Path + "/" + input.Name
+		parentID = input.ParentID
+	} else {
+		// Build path - 在用户目录下创建
+		// 用户目录路径: /{appID}/{email}/{name}
+		userDir := "/" + appID + "/" + email
+		path = userDir + "/" + input.Name
+
+		// 确保用户目录存在
+		if err := u.storage.CreateDirectory(ctx, userDir); err != nil {
+			// 忽略已存在的错误
+		}
 	}
 
 	// Write file to storage
@@ -183,13 +221,13 @@ func (u *objectUseCase) CreateFile(ctx context.Context, creatorID uuid.UUID, app
 
 	contentHash := u.storage.CalculateHash(input.Content)
 
-	// Create object record - 只记录 inode 和创建人
+	// Create object record
 	obj := &entity.Object{
 		ID:             inode,
 		Name:           input.Name,
 		Type:           input.Type,
 		Path:           path,
-		ParentID:       nil, // 不记录父子关系
+		ParentID:       parentID,
 		CreatorID:      creatorID,
 		Size:           int64(len(input.Content)),
 		ContentHash:    contentHash,

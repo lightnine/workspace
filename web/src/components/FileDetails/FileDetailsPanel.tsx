@@ -134,7 +134,7 @@ export const FileDetailsPanel: React.FC<FileDetailsPanelProps> = ({
               <Star className="w-4 h-4 text-muted-foreground hover:text-yellow-500 cursor-pointer" />
             </h3>
             <p className="text-xs text-muted-foreground truncate mt-1">
-              {file.path}
+              {file.full_path}
             </p>
           </div>
         </div>

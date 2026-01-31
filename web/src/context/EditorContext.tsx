@@ -90,7 +90,7 @@ export const EditorProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       addRecent({
         fileId: file.id,
         fileName: file.name,
-        filePath: file.path,
+        filePath: file.full_path,
         type: file.type
       });
     } catch (error) {
